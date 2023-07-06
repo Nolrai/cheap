@@ -52,6 +52,9 @@ instance : LawfulMonad F :=
   , bind_map := by {intros; funext; rfl}
   }
 
+notation:50 " □" => F.eventually
+notation:50 " ◇" => F.infinitely_often
+
 def forall_to_eventually (p : α → Prop) (s : F α) : (∀ n, p (s n)) → F.eventually p s := 
   λ h ↦ ⟨0, λ _ _ ↦ h _⟩
 
@@ -68,9 +71,6 @@ def infinately_often_to_thereExists (p : α → Prop) (s : F α) : F.infinitely_
     have ⟨m, h⟩ := h 0
     use m
     apply h.right
-
-
-notation:50 " □" => F.eventually
 
 def unlimited_unit : F ℕ := λ n ↦ n + 1
 
@@ -100,6 +100,3 @@ def delta_is_infinitesimal : infinitesmal delta := by
   use 0
   intro m h
   simp [delta, abs]
-
-  
-
