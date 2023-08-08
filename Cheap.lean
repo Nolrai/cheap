@@ -176,6 +176,12 @@ def Star (𝔽 : Filter ℕ) (α : Type u) := Quotient (F.Setoid 𝔽 α)
   
 def Star.mk {𝔽 : Filter ℕ} (α : Type u) : F α → Star 𝔽 α := Quotient.mk _
 
+def Star.ind {𝔽 : Filter ℕ} {α : Type u} {β : Star 𝔽 α → Prop} : (∀ s : F α, β (Star.mk α s)) → ∀ s : Star 𝔽 α, β s := by
+  intro h
+  intro s
+  induction s using Quotient.ind
+  apply h
+
 def Star.map (𝔽 : Filter ℕ) {α β} (f : α → β) : Star 𝔽 α → Star 𝔽 β := 
   Quotient.map' (F.map f) $
     by
@@ -206,69 +212,76 @@ instance : Applicative (Star 𝔽) :=
       sx (sy ())
   }
 
+theorem Star.map_def {α β} (f : α → β) (s : F α) : f <$> (Star.mk (𝔽 := 𝔽) α s) = Star.mk β (F.map f s) := rfl
+
+instance : LawfulFunctor (Star 𝔽) where
+  map_const := rfl
+  id_map := by
+    intro α a
+    induction a using Star.ind with
+    | _ s => rfl
+  comp_map := by
+    intro α β γ g h a
+    induction a using Star.ind with
+    | _ s => rfl
+
+theorem Star.seq_def {α β} (sf : F (α → β)) (sa : F α) : (Star.mk (𝔽 := 𝔽) _ sf) <*> Star.mk _ sa = 
+  Star.mk _ (sf <*> sa) := rfl
+
+instance : LawfulApplicative (Star 𝔽) where
+  pure_seq := by
+    intro α β a b
+    induction b using Star.ind with
+    | _ s => rfl
+  map_pure := by
+    intro α β g a
+    simp [pure]
+    rw [Star.map_def]
+    rfl
+  seq_pure := by
+    intro α β a b
+    induction a using Star.ind with
+    | _ s => rfl
+  seq_assoc := by
+    intro α β γ a b c
+    induction a using Star.ind with
+    | _ s => 
+      induction b using Star.ind with
+      | _ t => 
+        induction c using Star.ind with
+        | _ u => rfl
+  seqLeft_eq := by
+    intro α β a b
+    induction a using Star.ind with
+    | _ s => rfl
+  seqRight_eq := by
+    intro α β a b
+    induction a using Star.ind with
+    | _ s => rfl
+
 instance [Add α] : Add (Star 𝔽 α) where
   add := λ x y ↦ (· + ·) <$> x <*> y
+
+instance [Mul α] : Mul (Star 𝔽 α) where
+  mul := λ x y ↦ (· * ·) <$> x <*> y
+
+instance [Neg α] : Neg (Star 𝔽 α) where
+  neg := λ x ↦ (- ·) <$> x
+
+instance [Pow α β] : Pow (Star 𝔽 α) (Star 𝔽 β) where
+  pow := λ x y ↦ (· ^ ·) <$> x <*> y
 
 theorem Star.add_def [Add α] : ∀ x y : Star 𝔽 α, x + y = (· + ·) <$> x <*> y := by
   intros x y
   simp [HAdd.hAdd, Add.add]
 
-#check Quotient.map'
-
-theorem Star.add_def' [Add α] : ∀ x y : F α, Star.mk (𝔽 := 𝔽) α x + Star.mk α y = Star.mk α (λ n ↦ x n + y n):= by
+theorem Star.add_def' [Add α] : ∀ x y : F α, 
+  Star.mk (𝔽 := 𝔽) α x + Star.mk α y = Star.mk α (λ n ↦ x n + y n):= by
   intros x y
   simp [Star.add_def, Seq.seq, Star.mk]
   have : ∀ z, Quotient.mk'' z = Quotient.mk (F.Setoid 𝔽 α) z := λ _ ↦ rfl
   simp_rw [← this, Quotient.map₂'_mk'', Functor.map, map, Quotient.map'_mk'', F.map, Quotient.map₂'_mk'']
   simp [Quotient.map'_mk'']
-
-theorem Star.ind
-  {α : Type u} {𝔽 : Filter ℕ} {motive : Star 𝔽 α → Prop} 
-: ((a : F α) → motive (Star.mk α a)) → (q : Star 𝔽 α) → motive q := by
-  intro h q
-  induction q using Quotient.ind
-  rw [Star.mk] at h
-  apply h
-
-theorem Star.add_assoc [AddSemigroup α] : ∀ x y z : Star 𝔽 α, x + y + z = x + (y + z) := by
-  intro x y z
-  cases x using Star.ind with | _ x =>
-  cases y using Star.ind with | _ y =>
-  cases z using Star.ind with | _ z =>
-  simp_rw [Star.add_def']
-  apply Quotient.sound
-  apply Filter.superset
-  apply 𝔽.univ
-  intros n _
-  simp [Set.mem_def]
-  apply AddSemigroup.add_assoc
-
-instance [AddMonoid α] : AddMonoid (Star 𝔽 α) where
-  add_assoc := Star.add_assoc
-  zero := Star.mk α (λ _ ↦ 0)
-  zero_add := by
-    intro x
-    cases x using Star.ind with | _ x =>
-    simp_rw [Star.add_def']
-    apply Quotient.sound
-    apply Filter.superset
-    apply 𝔽.univ
-    intros n _
-    simp [Set.mem_def]
-    apply AddMonoid.zero_add
-  add_zero := by
-    intro x
-    cases x using Star.ind with | _ x =>
-    simp_rw [Star.add_def']
-    apply Quotient.sound
-    apply Filter.superset
-    apply 𝔽.univ
-    intros n _
-    simp [Set.mem_def]
-    apply AddMonoid.add_zero
-
-instance [Mul α] : Mul (Star 𝔽 α) where
-  mul := λ x y ↦ (· * ·) <$> x <*> y
 
 theorem Star.mul_def [Mul α] : ∀ x y : Star 𝔽 α, x * y = (· * ·) <$> x <*> y := by
   intros x y
@@ -282,100 +295,169 @@ theorem Star.mul_def' [Mul α] : ∀ x y : F α,
   simp_rw [← this, Quotient.map₂'_mk'', Functor.map, map, Quotient.map'_mk'', F.map, Quotient.map₂'_mk'']
   simp [Quotient.map'_mk'']
 
-theorem Star.mul_assoc [Semigroup α] : ∀ x y z : Star 𝔽 α, x * y * z = x * (y * z) := by
-  intro x y z
-  cases x using Star.ind with | _ x =>
-  cases y using Star.ind with | _ y =>
-  cases z using Star.ind with | _ z =>
-  simp_rw [Star.mul_def']
-  apply Quotient.sound
-  apply Filter.superset
-  apply 𝔽.univ
-  intros n _
-  simp [Set.mem_def]
-  apply Semigroup.mul_assoc
+theorem Star.pow_def [Pow α β] : ∀ x : Star 𝔽 α, ∀ y : Star 𝔽 β, 
+  x ^ y = ((λ a b ↦ a ^ b) <$> x <*> y) := by
+  intros x y
+  simp [HPow.hPow, Pow.pow]
 
-instance [Monoid α] : Monoid (Star 𝔽 α) where
-  mul_assoc := Star.mul_assoc
+theorem Star.pow_def' [Pow α α] : ∀ x : F α, ∀ y : F α, 
+  Star.mk (𝔽 := 𝔽) α x ^ Star.mk (𝔽 := 𝔽) α y = Star.mk α (λ m ↦ x m ^ y m) := by
+  intros x y
+  simp [Star.pow_def, Seq.seq, Star.mk]
+  have : ∀ z, Quotient.mk'' z = Quotient.mk (F.Setoid 𝔽 α) z := λ _ ↦ rfl
+  simp_rw [← this, Quotient.map₂'_mk'', Functor.map, map, Quotient.map'_mk'', F.map, Quotient.map₂'_mk'']
+  simp [Quotient.map'_mk'']
+  
+theorem Star.neg_def [Neg α] : ∀ x : Star 𝔽 α, -x = (- ·) <$> x := by
+  intros x
+  simp [Neg.neg]
+
+theorem Star.neg_def' [Neg α] : ∀ x : F α, -(Star.mk (𝔽 := 𝔽) α x) = Star.mk α (λ n ↦ -x n) := by
+  intros x
+  simp [Star.neg_def, Star.mk]
+  have : ∀ z, Quotient.mk'' z = Quotient.mk (F.Setoid 𝔽 α) z := λ _ ↦ rfl
+  simp_rw [← this, Functor.map, map, Quotient.map'_mk'', F.map]
+
+instance [One α] : One (Star 𝔽 α) where
   one := Star.mk α (λ _ ↦ 1)
-  one_mul := by
-    intro x
-    cases x using Star.ind with | _ x =>
-    simp_rw [Star.mul_def']
-    apply Quotient.sound
-    apply Filter.superset
-    apply 𝔽.univ
-    intros n _
-    simp [Set.mem_def]
-    apply Monoid.one_mul
-  mul_one := by
-    intro x
-    cases x using Star.ind with | _ x =>
-    simp_rw [Star.mul_def']
-    apply Quotient.sound
-    apply Filter.superset
-    apply 𝔽.univ
-    intros n _
-    simp [Set.mem_def]
-    apply Monoid.mul_one
 
-instance [AddCommMonoid α] : AddCommMonoid (Star 𝔽 α) where
-  add_comm := by
-    intro x y
-    cases x using Star.ind with | _ x =>
-    cases y using Star.ind with | _ y =>
-    simp_rw [Star.add_def']
-    apply Quotient.sound
-    apply Filter.superset
-    apply 𝔽.univ
-    intros n _
-    simp [Set.mem_def]
-    apply AddCommMonoid.add_comm
+instance [Zero α] : Zero (Star 𝔽 α) where
+  zero := Star.mk α (λ _ ↦ 0)
+
+theorem Star.one_def [One α] : (1 : Star 𝔽 α) = Star.mk α (λ _ ↦ 1) := rfl
+theorem Star.zero_def [Zero α] : (0 : Star 𝔽 α) = Star.mk α (λ _ ↦ 0) := rfl
 
 inductive RingExp : ℕ → Type where
-  | zero : RingExp 0
-  | one : RingExp 0
-  | var : ∀ {n}, Fin n → RingExp n
-  | add : ∀ n, RingExp n → RingExp n → RingExp n
-  | mul : ∀ n, RingExp n → RingExp n → RingExp n
-  | neg : ∀ n, RingExp n → RingExp n
-  | pow : ∀ n, RingExp n → RingExp n → RingExp n
+  | zero : ∀ {n}, RingExp n
+  | one  : ∀ {n}, RingExp n
+  | var  : ∀ {n}, Fin n → RingExp n
+  | add  : ∀ {n}, RingExp n → RingExp n → RingExp n
+  | mul  : ∀ {n}, RingExp n → RingExp n → RingExp n
+  | neg  : ∀ {n}, RingExp n → RingExp n
+  | pow  : ∀ {n}, RingExp n → RingExp n → RingExp n
 
 section RingExp
 
 instance {n} : Add (RingExp n)  where
-  add := RingExp.add n
+  add := RingExp.add
 
 instance {n} : Mul (RingExp n)  where
-  mul := RingExp.mul n
+  mul := RingExp.mul
 
 instance {n} : Neg (RingExp n) where
-  neg := RingExp.neg n
+  neg := RingExp.neg
 
 instance {n} : Pow (RingExp n) (RingExp n) where
-  pow := RingExp.pow n
+  pow := RingExp.pow
 
 structure RingEq (n : ℕ) where
   lhs : RingExp n
   rhs : RingExp n
 
-def RingExp.eval {n : ℕ} (vars : Fin n → α) [Add α] [Mul α] [Neg α] [One α] [Zero α] [Pow α α] : RingExp n → α
+class RawRing (α : Type u) extends Add α, Mul α, Neg α, One α, Zero α, Pow α α where
+
+instance [Add α] [Mul α] [Neg α] [One α] [Zero α] [Pow α α] : RawRing α where
+
+def RingExp.eval {n : ℕ} (vars : Fin n → α) [RawRing α] : RingExp n → α
   | zero => 0
   | one => 1
   | var i => vars i
-  | add _ x y => x.eval vars + y.eval vars
-  | mul _ x y => x.eval vars * y.eval vars
-  | neg _ x => - x.eval vars
-  | pow _ x y => x.eval vars ^ y.eval vars
+  | add x y => x.eval vars + y.eval vars
+  | mul x y => x.eval vars * y.eval vars
+  | neg x => - x.eval vars
+  | pow x y => x.eval vars ^ y.eval vars 
 
-def RingEq.eval {n : ℕ} (vars : Fin n → α) [Add α] [Mul α] [Neg α] [One α] [Zero α] [Pow α α] : RingEq n → Prop
+def RingEq.eval {n : ℕ} (vars : Fin n → α) [RawRing α] : RingEq n → Prop
   | ⟨lhs, rhs⟩ => lhs.eval vars = rhs.eval vars
 
-theorem Star.transfer {n} (r : RingEq n) [Add α] [Mul α] [Neg α] [One α] [Zero α] [Pow α α] 
-  : (∀ vars : Fin n → α, r.eval vars) → 
-    (∀ vars : Fin n → Star 𝔽 α, r.eval vars) := by
-  intro h vars
-  cases vars using Star.ind with | _ vars =>
-  simp_rw [Star.mk]
-  apply h
+open RingExp
+
+def Fin.toPair : ∀ {n : ℕ}, (Fin (n + 1) → α) → (α × (Fin n → α))
+  | 0, f => ⟨f 0, Fin.elim0⟩
+  | _ +1, f => ⟨f 0, λ i => f (i.succ)⟩
+
+def Fin.fromPair : ∀ {n : ℕ}, α → (Fin n → α) → (Fin (n + 1) → α)
+  | 0, a, _, _ => a
+  | n +1, a, f, i => match i with
+    | ⟨0, _⟩ => a
+    | ⟨j+1, succ_j_lt_succ_succ_n⟩ =>
+      have h : j < n + 1 := by simp at *; assumption 
+      f ⟨j, h⟩
+
+def Applicative.pull [Applicative A] (a : Fin n → A α) : A (Fin n → α) := by
+  induction n with
+  | zero => exact pure (λ f ↦ Fin.elim0 f)
+  | succ m m_ih => 
+    let rest : A (Fin m → α) := m_ih (λ i => a i.succ)
+    let first : A α := a 0
+    exact Fin.fromPair <$> first <*> rest 
+
+theorem Star.map_mk : ∀ (f : α → β) (x : ℕ → α), 
+  f <$> Star.mk (𝔽 := 𝔽) α x = Star.mk β (λ n ↦ f (x n)) := by
+  intros f x
+  simp [Star.mk, Functor.map, map, F.map]
+  have mk''_at_α : ∀ z, Quotient.mk'' z = Quotient.mk (F.Setoid 𝔽 α) z := λ _ ↦ rfl
+  have mk''_at_β : ∀ z, Quotient.mk'' z = Quotient.mk (F.Setoid 𝔽 β) z := λ _ ↦ rfl
+  simp_rw [← mk''_at_α, ← mk''_at_β, Functor.map, map, Quotient.map'_mk'']
+  
+theorem RingExp.evalStar [RawRing α] : 
+  ∀ {n} (r : RingExp n) 
+  (vars : Fin n → Star 𝔽 α), 
+  r.eval vars = r.eval <$> Applicative.pull vars
+| 0, zero, vars => rfl
+| 0, one, vars => rfl
+| 0, var i, vars => i.elim0
+| 0, add x y, vars => by
+  simp [RingExp.eval, Star.map_def]
+  rw [RingExp.evalStar, RingExp.evalStar]
+  rfl
+| 0, mul x y, vars => by
+  simp [RingExp.eval, Star.map_def]
+  rw [RingExp.evalStar, RingExp.evalStar]
+  rfl
+| 0, neg x, vars => by
+  simp [RingExp.eval, Star.map_def]
+  rw [RingExp.evalStar]
+  rfl
+| 0, pow x y, vars => by
+  simp [RingExp.eval, Star.map_def]
+  rw [RingExp.evalStar, RingExp.evalStar]
+  rfl
+
+| n+1, zero, vars => rfl
+| n+1, one, vars => rfl
+| n+1, var i, vars => by
+  simp [RingExp.eval, Star.map_def, Applicative.pull]
+  simp [RingExp.evalStar]
+| n+1, add x y, vars => by
+  simp [RingExp.eval, Functor.map, map, Applicative.pull]
+  rw [Star.zero_def, Star.one_def]
+  simp [RingExp.evalStar]
+| n+1, mul x y, vars => by
+  simp [RingExp.eval, Functor.map, map, Applicative.pull]
+  rw [Star.zero_def, Star.one_def]
+  simp [RingExp.evalStar]
+| n+1, neg x, vars => by
+  simp [RingExp.eval, Functor.map, map, Applicative.pull]
+  rw [Star.zero_def, Star.one_def]
+  simp [RingExp.evalStar]
+| n+1, pow x y, vars => by
+  simp [RingExp.eval, Functor.map, map, Applicative.pull]
+  rw [Star.zero_def, Star.one_def]
+  simp [RingExp.evalStar]
+
+
+theorem Star.transfer [Add α] [Mul α] [Neg α] [One α] [Zero α] [Pow α α] 
+  : ∀ {n : ℕ} (r : RingEq n)
+  , (∀ vars : Fin n → α, r.eval vars) 
+  → (∀ vars : Fin n → Star 𝔽 α, r.eval vars)
+| n, ⟨lhs, rhs⟩, h, vars => by
+  simp [RingEq.eval] at *
+  induction lhs with 
+  | zero => 
+    simp [eval] at *
+    rw [Star.zero_def]
+    
+
+
   
