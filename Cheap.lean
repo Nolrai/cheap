@@ -1,3 +1,4 @@
+import CHEAP.example
 import Mathlib.Data.Nat.Basic
 import Mathlib.Data.Rat.Basic
 import Mathlib.Data.Rat.Order
@@ -327,28 +328,31 @@ instance [Zero α] : Zero (Star 𝔽 α) where
 theorem Star.one_def [One α] : (1 : Star 𝔽 α) = Star.mk α (λ _ ↦ 1) := rfl
 theorem Star.zero_def [Zero α] : (0 : Star 𝔽 α) = Star.mk α (λ _ ↦ 0) := rfl
 
+inductive BiOp where
+  | add : BiOp
+  | mul : BiOp
+  | pow : BiOp
+
 inductive RingExp : ℕ → Type where
   | zero : ∀ {n}, RingExp n
   | one  : ∀ {n}, RingExp n
   | var  : ∀ {n}, Fin n → RingExp n
-  | add  : ∀ {n}, RingExp n → RingExp n → RingExp n
-  | mul  : ∀ {n}, RingExp n → RingExp n → RingExp n
   | neg  : ∀ {n}, RingExp n → RingExp n
-  | pow  : ∀ {n}, RingExp n → RingExp n → RingExp n
+  | op  : ∀ {n}, RingExp n → BiOp → RingExp n → RingExp n
 
 section RingExp
 
 instance {n} : Add (RingExp n)  where
-  add := RingExp.add
+  add x y := RingExp.op x BiOp.add y
 
 instance {n} : Mul (RingExp n)  where
-  mul := RingExp.mul
+  mul x y := RingExp.op x BiOp.mul y
 
 instance {n} : Neg (RingExp n) where
   neg := RingExp.neg
 
 instance {n} : Pow (RingExp n) (RingExp n) where
-  pow := RingExp.pow
+  pow x y := RingExp.op x BiOp.pow y
 
 structure RingEq (n : ℕ) where
   lhs : RingExp n
@@ -358,14 +362,17 @@ class RawRing (α : Type u) extends Add α, Mul α, Neg α, One α, Zero α, Pow
 
 instance [Add α] [Mul α] [Neg α] [One α] [Zero α] [Pow α α] : RawRing α where
 
+def BiOp.eval [RawRing α] : BiOp → α → α → α
+  | BiOp.add => λ a b ↦ a + b
+  | BiOp.mul => λ a b ↦ a * b
+  | BiOp.pow => λ a b ↦ a ^ b
+
 def RingExp.eval {n : ℕ} (vars : Fin n → α) [RawRing α] : RingExp n → α
   | zero => 0
   | one => 1
   | var i => vars i
-  | add x y => x.eval vars + y.eval vars
-  | mul x y => x.eval vars * y.eval vars
-  | neg x => - x.eval vars
-  | pow x y => x.eval vars ^ y.eval vars 
+  | neg x => - (x.eval vars)
+  | op x b y => b.eval (x.eval vars) (y.eval vars)
 
 def RingEq.eval {n : ℕ} (vars : Fin n → α) [RawRing α] : RingEq n → Prop
   | ⟨lhs, rhs⟩ => lhs.eval vars = rhs.eval vars
@@ -392,6 +399,15 @@ def Applicative.pull [Applicative A] (a : Fin n → A α) : A (Fin n → α) := 
     let first : A α := a 0
     exact Fin.fromPair <$> first <*> rest 
 
+theorem Applicative.pull_zero [Applicative A] (a : Fin 0 → A α) : 
+  Applicative.pull a = pure (λ f ↦ Fin.elim0 f) := rfl
+
+theorem Applicative.pull_succ [Applicative A] (a : Fin (n + 1) → A α) : 
+  Applicative.pull a = 
+    let rest : A (Fin n → α) := Applicative.pull (λ i => a i.succ)
+    let first : A α := a 0
+    Fin.fromPair <$> first <*> rest := rfl
+
 theorem Star.map_mk : ∀ (f : α → β) (x : ℕ → α), 
   f <$> Star.mk (𝔽 := 𝔽) α x = Star.mk β (λ n ↦ f (x n)) := by
   intros f x
@@ -399,65 +415,4 @@ theorem Star.map_mk : ∀ (f : α → β) (x : ℕ → α),
   have mk''_at_α : ∀ z, Quotient.mk'' z = Quotient.mk (F.Setoid 𝔽 α) z := λ _ ↦ rfl
   have mk''_at_β : ∀ z, Quotient.mk'' z = Quotient.mk (F.Setoid 𝔽 β) z := λ _ ↦ rfl
   simp_rw [← mk''_at_α, ← mk''_at_β, Functor.map, map, Quotient.map'_mk'']
-  
-theorem RingExp.evalStar [RawRing α] : 
-  ∀ {n} (r : RingExp n) 
-  (vars : Fin n → Star 𝔽 α), 
-  r.eval vars = r.eval <$> Applicative.pull vars
-| 0, zero, vars => rfl
-| 0, one, vars => rfl
-| 0, var i, vars => i.elim0
-| 0, add x y, vars => by
-  simp [RingExp.eval, Star.map_def]
-  rw [RingExp.evalStar, RingExp.evalStar]
-  rfl
-| 0, mul x y, vars => by
-  simp [RingExp.eval, Star.map_def]
-  rw [RingExp.evalStar, RingExp.evalStar]
-  rfl
-| 0, neg x, vars => by
-  simp [RingExp.eval, Star.map_def]
-  rw [RingExp.evalStar]
-  rfl
-| 0, pow x y, vars => by
-  simp [RingExp.eval, Star.map_def]
-  rw [RingExp.evalStar, RingExp.evalStar]
-  rfl
-
-| n+1, zero, vars => rfl
-| n+1, one, vars => rfl
-| n+1, var i, vars => by
-  simp [RingExp.eval, Star.map_def, Applicative.pull]
-  simp [RingExp.evalStar]
-| n+1, add x y, vars => by
-  simp [RingExp.eval, Functor.map, map, Applicative.pull]
-  rw [Star.zero_def, Star.one_def]
-  simp [RingExp.evalStar]
-| n+1, mul x y, vars => by
-  simp [RingExp.eval, Functor.map, map, Applicative.pull]
-  rw [Star.zero_def, Star.one_def]
-  simp [RingExp.evalStar]
-| n+1, neg x, vars => by
-  simp [RingExp.eval, Functor.map, map, Applicative.pull]
-  rw [Star.zero_def, Star.one_def]
-  simp [RingExp.evalStar]
-| n+1, pow x y, vars => by
-  simp [RingExp.eval, Functor.map, map, Applicative.pull]
-  rw [Star.zero_def, Star.one_def]
-  simp [RingExp.evalStar]
-
-
-theorem Star.transfer [Add α] [Mul α] [Neg α] [One α] [Zero α] [Pow α α] 
-  : ∀ {n : ℕ} (r : RingEq n)
-  , (∀ vars : Fin n → α, r.eval vars) 
-  → (∀ vars : Fin n → Star 𝔽 α, r.eval vars)
-| n, ⟨lhs, rhs⟩, h, vars => by
-  simp [RingEq.eval] at *
-  induction lhs with 
-  | zero => 
-    simp [eval] at *
-    rw [Star.zero_def]
-    
-
-
   
