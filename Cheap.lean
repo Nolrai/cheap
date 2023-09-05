@@ -57,44 +57,5 @@ instance : LawfulMonad F :=
   , bind_map := by {intros; funext; rfl}
   }
 
-open Set
-
-structure SetIdeal (α : Type u) where
-  small : (Set α) → Prop 
-  nonempty : ∃ s, small s
-  lower : ∀ {s t}, small s → t ⊆ s → small t
-  union : ∀ {s t}, small s → small t → small (s ∪ t)
-
-structure ProperIdeal (α : Type u) extends SetIdeal α where
-  proper : ∀ {s}, small s → ∃ x, x ∉ s 
-
-theorem proper' (I : ProperIdeal α) : ¬ I.small univ :=
-  λ h => let ⟨x, hx⟩ := I.proper h
-         hx (Set.mem_univ x)
-
-structure FreeIdeal (α : Type u) extends ProperIdeal α where
-  free : ∀ {x} {s}, small s → x ∉ s → small (insert x s)
-
-structure PrimeIdeal (α : Type u) extends ProperIdeal α where
-  prime : ∀ {s t}, small (s ∩ t) → small s ∨ small t
-
-structure Ultraideal (α : Type u) extends PrimeIdeal α where
-  ultra : ∀ p, small p ∨ small (pᶜ) 
-
-def isErr {α β} : α ⊕' β → Bool
-  | .inl _ => true
-  | .inr _ => false 
-
-@[reducible]
-def box (I : ProperIdeal ℕ) (α : Sort u) := {μ : F (⊤ ⊕' α) // I.small (λ n ↦ isErr (μ n) : ℕ → Prop)}
-
-def box.head {I : ProperIdeal ℕ} {α : Sort u} (s : box I α) : Nonempty α := by
-  let ⟨μ, hμ⟩ := s
-  let ⟨n, hn⟩ := I.proper hμ
-  simp_rw [Set.mem_def] at *
-  clear hμ s
-  revert hn
-  cases μ n with
-  | inl _ => intro; contradiction
-  | inr a => intro; exact ⟨a⟩
+def RingExp := ∀ α, [Ring α] → α → α
 
