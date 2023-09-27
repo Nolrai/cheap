@@ -32,6 +32,10 @@ theorem liftSub.def [Applicative F] [Sub X] :
 
 open Function
 
+instance [h : Semiring X] : Semiring (Id X) := h
+
+section LiftSemiring where
+
 instance liftSemiring [Semiring X] : Semiring (ReaderM Env X) where
   zero := pure 0
   one := pure 1
@@ -61,23 +65,43 @@ instance liftSemiring [Semiring X] : Semiring (ReaderM Env X) where
     funext env
     simp [Seq.seq, Functor.map, Pure.pure]
     simp [OfNat.ofNat, ReaderT.pure]
+    apply add_assoc
 
-  add_comm := by sorry
+  add_comm := by
+    intros a b
+    simp [liftAdd.def]
+    funext env
+    simp [Seq.seq, Functor.map, Pure.pure]
+    simp [OfNat.ofNat, ReaderT.pure]
+    apply add_comm
 
   mul := lift2 (· * ·)
-  mul_one := by sorry
-  one_mul := by sorry
-  zero_mul := by sorry
+  mul_one := by
+    intros a
+    simp [liftAdd.def]
+    funext env
+    simp [Seq.seq, Functor.map, Pure.pure]
+    simp [OfNat.ofNat, ReaderT.pure]
+    apply mul_one
+
+  one_mul := by
+    intros a
+    simp [liftAdd.def]
+    funext env
+    simp [Seq.seq, Functor.map, Pure.pure]
+    simp [OfNat.ofNat, ReaderT.pure]
+    apply one_mul
+
+  zero_mul := by
+    intros a
+    simp [liftAdd.def]
+    funext env
+    simp [Seq.seq, Functor.map, Pure.pure]
+    simp [OfNat.ofNat, ReaderT.pure]
+    apply zero_mul
+
   mul_zero := by sorry
   mul_assoc := by sorry
 
   left_distrib := by sorry
   right_distrib := by sorry
-
-structure analysis (F : Type → Type) extends Applicative F where
-  X : Type
-  [is_ring : Ring X]
-  derivative : (F X → F X) → F X → F X
-  integral : (F X → F X) → F X → F X
-  derivative_integral : ∀ f, derivative (integral f) = f
-  anti_derivatives_differ_by_constant : ∀ f g : F X → F X, derivative f = derivative g → ∃ c, ∀ x : F X, f x = g x + c 
