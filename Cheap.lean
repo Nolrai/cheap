@@ -8,7 +8,7 @@ instance [Ring R] : Coe (D₁ R) R where
 def toLine [Ring R] : (R × R) → D₁ R → R
   | ⟨intercept, slope⟩, ε => intercept + ε.val * slope
 
-class KockLawvere (R) extends Ring R, Nontrivial R where
+class KockLawvere (R) extends CommRing R, Nontrivial R where
   equiv : (D₁ R → R) ≃ R × R
   equiv_eval : ↑equiv.symm = toLine
 
@@ -86,9 +86,18 @@ class OrderedKockLawvere (R) extends KockLawvere R, Preorder R, ZeroLEOneClass R
   mul_nonneg_monotonic (x y t : R) : x ≤ y → 0 ≤ t → x * t ≤ y * t
   zero_lt_one : (0 : R) < 1
   nilpotent_fuzzy (ε : D₁ R) : 0 ≈ ε.val
-  narrow : ∀ {a b : R}, ¬ a ≤ b → b ≤ a
+  narrow : ∀ {a b : R}, a ≤ b ∨ b ≤ a
 
 open OrderedKockLawvere
+
+theorem narrow' [OrderedKockLawvere R] (a b : R) : a ≤ b ∨ b ≤ a := narrow
+
+theorem add_monotonic_inv [OrderedKockLawvere R] (z x y : R) :
+  x + z ≤ y + z → x ≤ y := by
+  intros hyp
+  have : x + z + -z ≤ y + z + -z := add_monotonic (x + z) (y + z) (-z) hyp
+  simp at this
+  exact this
 
 theorem le_add_nilpotent [OrderedKockLawvere R] 
   (x y : R) (d : D₁ R) : x ≤ y ↔ (x ≤ y + d) := by
@@ -123,19 +132,151 @@ theorem add_nilpotent_le [OrderedKockLawvere R]
     · apply hyp
 
 def mkCrisp [OrderedKockLawvere R] (a b : R) : Crisp R where
-  toSet x := a ≤ x ∧ x ≤ b
+  toSet x := (a ≤ x ∧ x ≤ b) ∨ (b ≤ x ∧ x ≤ a) 
   crisp := by
-    intros x d
-    have ⟨x, a_le_x, x_le_b⟩ := x
-    simp [Set.mem_def]
-    apply And.intro
-    · apply (le_add_nilpotent a x d).1 a_le_x
-    · apply (add_nilpotent_le x b d).1 x_le_b
+    have aux {d : D₁ R} {x a b : R} : a ≤ x → x ≤ b → (a ≤ x + d ∧ x + d ≤ b) := by
+      intros a_le_x x_le_b
+      simp [Set.mem_def]
+      apply And.intro
+      · apply (le_add_nilpotent a x d).1 a_le_x
+      · apply (add_nilpotent_le x b d).1 x_le_b
+    intro x d
+    have ⟨x, h⟩ := x
+    match h with
+    | Or.inl ⟨a_le_x, x_le_b⟩ =>
+      left
+      simp [Set.mem_def]
+      apply aux a_le_x x_le_b
+    | Or.inr ⟨b_le_x, x_le_a⟩ =>
+      right
+      simp [Set.mem_def]
+      apply aux b_le_x x_le_a
 
 def I R [OrderedKockLawvere R] := mkCrisp (0 : R) 1
 
-class IntegratableSpace (R) extends OrderedKockLawvere R where
-  integrate : (I R → R) → (I R → R)
-  integrate_start : ∀ f, integrate f ⟨zero, refl _, zero_le_one⟩ = 0
-  is_antiderivative : ∀ f, first_dir (integrate f) = f
+theorem not_le_iff_gt [OrderedKockLawvere R] (x y : R) : ¬ x ≤ y ↔ y < x := by
+  apply Iff.intro
+  · intros not_le
+    rw [lt_iff_le_not_le]
+    have : x ≤ y ∨ y ≤ x := narrow
+    cases this with
+    | inl h => 
+      exfalso
+      apply not_le h
+    | inr h => exact (And.intro h not_le)
+  · intros gt
+    rw [lt_iff_le_not_le] at gt
+    exact gt.2
 
+theorem lower_bound_unit_interval [OrderedKockLawvere R] (x : I R) : 0 ≤ x.val := by
+  have ⟨x, x_hyp⟩ := x
+  match x_hyp with
+  | Or.inl x_hyp => simp; exact x_hyp.1
+  | Or.inr x_hyp =>
+    have : 1 ≤ 0 := le_trans (b := x) x_hyp.1 x_hyp.2
+    have : ¬ (1 : R) ≤ 0 := by
+      rw [not_le_iff_gt 1 0]
+      apply OrderedKockLawvere.zero_lt_one
+    contradiction
+
+theorem upper_bound_unit_interval [OrderedKockLawvere R] (x : I R) : x.val ≤ 1 := by
+  have ⟨x, x_hyp⟩ := x
+  match x_hyp with
+  | Or.inl x_hyp => simp; exact x_hyp.2
+  | Or.inr x_hyp =>
+    have : 1 ≤ 0 := le_trans (b := x) x_hyp.1 x_hyp.2
+    have : ¬ (1 : R) ≤ 0 := by
+      rw [not_le_iff_gt 1 0]
+      apply OrderedKockLawvere.zero_lt_one
+    contradiction
+
+instance [OrderedKockLawvere R] : Zero (I R) where
+  zero := ⟨0, Or.inl ⟨refl _, zero_le_one⟩⟩ 
+
+instance [OrderedKockLawvere R] : One (I R) where
+  one := ⟨1, Or.inl ⟨zero_le_one, refl _⟩⟩
+
+class IntegratableSpace (R) extends OrderedKockLawvere R where
+  gsum : (I R → R) → (I R → R)
+  gsum_start : ∀ f, gsum f 0 = 0
+  is_antiderivative : ∀ f, first_dir (gsum f) = f
+
+theorem neg_le_neg [OrderedKockLawvere R] (x y : R) :
+  x ≤ y ↔ -y ≤ -x := by
+  apply Iff.intro
+  · intros x_le_y
+    apply add_monotonic_inv (y + x)
+    ring_nf
+    exact x_le_y
+  · intros x_le_y
+    apply add_monotonic_inv (-(y + x))
+    ring_nf
+    exact x_le_y
+
+def definiate_integral_aux 
+  [kl : IntegratableSpace R] {φ : R → Prop} 
+  (a b : R)
+  (inCrisp : ∀ x, x ∈ mkCrisp a b → φ x)
+  (x : I R) : {x // φ x} := by
+  use (a * x + b * (1 - x))
+  apply inCrisp
+  have : a ≤ b ∨ b ≤ a := narrow
+  cases this with
+  | inl h => 
+    left
+    rw [sub_eq_neg_add, add_comm (- _)]
+    ring_nf
+    rw [sub_eq_add_neg, mul_comm _ b, ← neg_mul, ← right_distrib]
+    rw [← sub_eq_add_neg]
+    apply And.intro
+    · apply add_monotonic_inv (z := -b)
+      simp
+      rw [← sub_eq_add_neg]
+      have : (a - b) = -(b - a) := by ring
+      rw [this]; clear this
+      rw [neg_mul, ← neg_le_neg, mul_comm]
+      apply le_trans (b := 1 * (b - a)) _ (by rw [one_mul])
+      apply mul_nonneg_monotonic
+      · apply upper_bound_unit_interval
+      apply add_monotonic_inv a
+      ring_nf
+      exact h
+    · apply le_trans (b := 0 + b) _ (by simp)
+      apply add_monotonic
+      apply le_trans (b := 0 * x.val) _ (by simp)
+      · apply mul_nonneg_monotonic
+        · apply add_monotonic_inv (z := b)
+          simp
+          exact h
+        · apply lower_bound_unit_interval
+  | inr h =>
+    right
+    rw [sub_eq_neg_add, add_comm (- _)]
+    ring_nf
+    rw [sub_eq_add_neg, mul_comm _ b, ← neg_mul, ← right_distrib]
+    rw [← sub_eq_add_neg]
+    apply And.intro
+    · apply le_trans (b := 0 + b) (by simp)
+      apply add_monotonic (z := b)
+      apply le_trans (b := 0 * x.val) (by simp)
+      apply mul_nonneg_monotonic 
+      · apply add_monotonic_inv (z := b)
+        simp
+        exact h
+      · apply lower_bound_unit_interval
+    · apply add_monotonic_inv (z := -b)
+      simp
+      rw [← sub_eq_add_neg]
+      rw [mul_comm]
+      apply le_trans (b := 1 * (a - b)) _ (by rw [one_mul])
+      apply mul_nonneg_monotonic
+      · apply upper_bound_unit_interval
+      apply add_monotonic_inv b
+      ring_nf
+      exact h
+
+def definiate_integral [kl : IntegratableSpace R] {φ : R → Prop} 
+  (f : {x : R // φ x} → R)
+  (a b : R)
+  (inCrisp : ∀ x, x ∈ mkCrisp a b → φ x) : R :=
+    (a - b) * (kl.gsum (f ∘ definiate_integral_aux a b inCrisp) 1)
