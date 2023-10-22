@@ -3,6 +3,7 @@ import Mathlib.Data.Rat.Basic
 import Mathlib.Data.Rat.Order
 import Mathlib.Data.Nat.Cast.Basic
 import Mathlib.Data.List.Basic
+import Mathlib.Algebra.Order.Archimedean
 import std
 
 namespace Stream
@@ -23,7 +24,8 @@ def iterate {α : Sort u} (f : α → α) (a : α) : F α := λ n ↦ n.recOn a 
 def eventually {α : Sort u} (p : α → Prop) (s : F α) : Prop := ∃ n, ∀ m, n ≤ m → p (s m)
 def infinitely_often {α : Sort u} (p : α → Prop) (s : F α) : Prop := ∀ n, ∃ m, n ≤ m ∧ p (s m)  
 
-notation:10 " □""(" f ")" => eventually id f
+notation:50 " □""(" f ")" => eventually id f
+notation:50 " ◇""(" f ")" => infinitely_often id f
 
 @[simp]
 theorem eventually_true : □ (λ _ => True) := by
@@ -32,6 +34,22 @@ theorem eventually_true : □ (λ _ => True) := by
   simp
 
 end F
+
+theorem diw_of_Box {p : F Prop} : □(p) → ◇(p)
+  | ⟨m, h'⟩, n =>  ⟨max m n, le_max_right _ _, h' _ (le_max_left _ _)⟩
+
+theorem markov {P : ℕ → Prop} (hyp : ¬ (∀ n, ¬ P n)) : ∃ n, P n := by
+  classical!
+  apply by_contradiction
+  intros hyp₀
+  apply hyp
+  intros n
+  by_cases h : ¬ P n
+  · exact h
+  · exfalso
+    apply hyp₀
+    use n
+    apply by_contradiction h
 
 instance : Functor F := { map := @F.map, mapConst := λ {α _} (a : α) _ _ ↦ a }
 
@@ -66,73 +84,166 @@ instance : LawfulMonad F :=
   , bind_map := by {intros; funext; rfl}
   }
 
-inductive Simple : ∀ {α} [Ring α], F α → Prop where
-  | const : ∀ {α} [Ring α] (c : α), Simple (λ _ ↦ c)
-  | omega : ∀ {α} [Ring α], Simple (λ n ↦ (↑n : α))
-  | add : ∀ {α} [Ring α] (f g : F α), Simple f → Simple g → Simple (λ x ↦ f x + g x)
-  | mul : ∀ {α} [Ring α] (f g : F α), Simple f → Simple g → Simple (λ x ↦ f x * g x)
-  | neg : ∀ {α} [Ring α] (f : F α), Simple f → Simple (λ x ↦ - f x)
-  | pow : ∀ {α} [Ring α] (f : F α) (n : ℕ), Simple f → Simple (λ x ↦ f x ^ n)
+notation:60 "∼" p => (¬ ·) ∘ p  
 
-def NStar := {f : F ℤ // Simple f}
+def preorderF [Preorder α] : Preorder (F α) where
+  le := λ x y => □ (λ n => x n ≤ y n)
+  le_refl := λ x => ⟨0, λ m _ => le_refl _⟩ 
+  le_trans := λ x y z ⟨n_xy, xy_h⟩ ⟨n_yz, yz_h⟩ =>
+    let m := max n_xy n_yz  
+    ⟨m, λ k m_le_k ↦ by
+      simp
+      apply le_trans (xy_h _ _) (yz_h _ _)
+      · apply le_trans (le_max_left _ _) m_le_k
+      · apply le_trans (le_max_right _ _) m_le_k
+    ⟩
 
-open Int
+instance lattice {α : Type} [Lattice α] : Lattice (F α) where
+  inf (p q : F α) := λ n => p n ⊓ q n 
+  sup (p q : F α) := λ n => p n ⊔ q n
+  le (p q : F α) := ∀ n, p n ≤ q n 
+  le_refl (p : F α) := λ n ↦ le_refl (p n)
+  le_trans (p q r: F α) (pq qr) := λ n ↦ le_trans (pq n) (qr n)
+  le_antisymm (p q : F α) (pq qp) := by
+    funext n
+    apply le_antisymm (pq n) (qp n)
+  le_sup_left (p q : F α) := λ n ↦ le_sup_left
+  le_sup_right (p q : F α) := λ n ↦ le_sup_right
+  sup_le (p q r : F α) := λ pr qr => λ n ↦ sup_le (pr n) (qr n) 
+  inf_le_left (p q : F α) := λ n ↦ inf_le_left
+  inf_le_right (p q : F α) := λ n ↦ inf_le_right
+  le_inf (p q r : F α) := λ pr qr => λ n ↦ le_inf (pr n) (qr n) 
 
-@[simp]
-theorem Int.sign_square_eq_one : ∀ (z : ℤ), z ≠ 0 → sign (z * z) = 1
-  | 0 => by simp
-  | Nat.succ n => by simp
-  | Int.negSucc n => by simp
+def std : F α → Prop := λ x => ∃ y, x = pure y
 
-theorem Int.sign_pow_even_nat : ∀ (n : ℕ) (z : ℤ), z ≠ 0 → sign (z ^ (2 * n)) = 1
-  | 0, 0 => by simp
-  | 0, z => by simp 
-  | n+1, z => by
-    intro z_ne_zero
-    rw [left_distrib, pow_succ, pow_succ, ← mul_assoc, sign_mul]
-    rw [Int.sign_square_eq_one z z_ne_zero, Int.sign_pow_even_nat n z z_ne_zero]
-    simp
+def limited {α : Type} [Preorder (F α)] (x : F α) : Prop := ∃ a b : F α, std a ∧ std b ∧ a ≤ x ∧ x ≤ b
 
-theorem NStar_eventually_single_signed : ∀ f : NStar,  □ (λ n => sign (f.val n) = sign (f.val (n+1))) 
-  | ⟨_, Simple.const c⟩ => by simp
-  | ⟨_, Simple.omega⟩ => by 
-    simp
-    use 1
-    intro m m_big
-    apply Int.sign_eq_one_of_pos
-    simp
-    apply lt_of_lt_of_le zero_lt_one m_big
-  | ⟨_, Simple.add f g hf hg⟩ => by
-    have ⟨n_f, hf'⟩ := NStar_eventually_single_signed ⟨f, hf⟩
-    have ⟨n_g, hg'⟩ := NStar_eventually_single_signed ⟨g, hg⟩
-    simp [F.eventually] at *
-    use max n_f n_g
-    intros m m_big
-    rw [sign_add_eq_of_sign_eq]
+class Prefilter (𝔽 : F Prop → Prop) where
+  upwards_closed (p q : F Prop) : (∀ n, p n → q n) → 𝔽 p → 𝔽 q
+  pure_true : 𝔽 (pure True)
+  pure_false : ¬ 𝔽 (pure False)
 
-  | ⟨_, Simple.mul f g hf hg⟩ => by
-    have ⟨n_f, hf'⟩ := NStar_eventually_single_signed ⟨f, hf⟩
-    have ⟨n_g, hg'⟩ := NStar_eventually_single_signed ⟨g, hg⟩ 
-    simp [F.eventually] at *
-    use max n_f n_g
-    intro m m_big
-    rw [hf', hg']
-    · apply le_trans (b := max n_f n_g) _ m_big
-      apply le_max_right
-    · apply le_trans (b := max n_f n_g) _ m_big
-      apply le_max_left
-  | ⟨_, Simple.neg f hf⟩ => by
-    have ⟨n_f, hf'⟩ := NStar_eventually_single_signed ⟨f, hf⟩
-    simp [F.eventually] at *
-    use n_f
-  | ⟨_, Simple.pow f n hf⟩ => by
-    have ⟨n_f, hf'⟩ := NStar_eventually_single_signed ⟨f, hf⟩
-    simp [F.eventually] at *
-    simp_rw [Int.sign_pow_nat]
-    induction n with
-      | zero => simp
-      | succ n ih => 
-        intro m m_big
-        simp [pow_succ, hf', ih m m_big]
+theorem lift_forall [Prefilter 𝔽] : (∀ n, p n) → (𝔽 p) := by
+  intros all_p
+  have : p = λ _ ↦ True := funext λ n => eq_true (all_p n)
+  rw [this]
+  apply Prefilter.pure_true
+
+class Filter (𝔽 : F Prop → Prop) extends Prefilter 𝔽 where
+  lift_and (p q : F Prop) : 𝔽 p → 𝔽 q → 𝔽 (p ⊓ q)
+
+class Cofilter (𝔽 : F Prop → Prop) extends Prefilter 𝔽 where
+  lower_or (p q : F Prop) : 𝔽 (p ⊔ q) → 𝔽 p ∨ 𝔽 q 
+
+instance : Filter (□ ( · ) ) where
+  upwards_closed (p q p_le_q) :=
+    λ ⟨n, proof_of_p⟩ ↦ ⟨n, λ m h ↦ by 
+        simp
+        apply p_le_q
+        apply proof_of_p _ h
+      ⟩
+  pure_true := F.eventually_true
+  pure_false := λ ⟨n, h⟩ => h n (le_refl _)
+  lift_and (p q : F Prop) :=
+    λ ⟨pn, p_proof⟩ ⟨qn, q_proof⟩ ↦ 
+      let k := max pn qn
+      ⟨k, λ m m_big ↦ 
+        have np_le_m : pn ≤ m := le_trans (le_max_left _ _) m_big
+        have nq_le_m : qn ≤ m := le_trans (le_max_right _ _) m_big
+        ⟨p_proof m np_le_m, q_proof m nq_le_m⟩
+      ⟩
+
+theorem Or.elim_inr : p ∨ q → ¬ q → p :=
+  λ p_or_q not_q ↦ p_or_q.elim id (False.elim ∘ not_q)
+
+theorem Or.elim_inl : p ∨ q → ¬ p → q :=
+  λ p_or_q not_p ↦ p_or_q.elim (False.elim ∘ not_p) id  
+
+instance : Cofilter (◇ (·)) where
+  upwards_closed (p q : F Prop) p_le_q := 
+    λ diw_p n ↦ 
+      have ⟨m, m_big, p_m⟩ := diw_p n
+      ⟨m, m_big, p_le_q _ p_m⟩
+
+  pure_true := λ n => ⟨n, le_refl n, by simp [pure]⟩
+  pure_false := λ h => 
+    have ⟨m, _, h⟩ := h 0
+    h
+  lower_or (p q) 𝔽_p_or_q := by
+    classical!
+    by_cases h : □ (∼ p)
+    · have ⟨n₀, h⟩ := h
+      simp at *
+      right
+      intros n₁
+      have ⟨n₂, n₂_big, p_or_q⟩ := 𝔽_p_or_q (max n₀ n₁)
+      use n₂
+      constructor
+      · apply le_trans _ n₂_big
+        apply le_max_right
+      · simp
+        simp_rw [id, Sup.sup] at p_or_q
+        apply Or.elim_inl p_or_q
+        apply h
+        simp [] at n₂_big
+        exact n₂_big.1
+    · left
+      intros n
+      simp at *
+      apply markov
+      intros hyp
+      apply h
+      use n
+      simp
+      intros m m_big p_m
+      apply hyp m ⟨m_big, p_m⟩
+
+class UltraFilter (𝔽 : F Prop → Prop) extends Filter 𝔽, Cofilter 𝔽
+
+theorem UltraFilter.ultra [UltraFilter (𝔽 : F Prop → Prop)] {p } : 𝔽 p ∨ 𝔽 (∼ p) := by
+  apply lower_or
+  apply lift_forall
+  intros n
+  simp_rw [Sup.sup]
+  simp
+  classical
+  apply em
+
+
+
+-- inductive Simple : ∀ {α} [Ring α], F α → Prop where
+--   | const : ∀ {α} [Ring α] (c : α), Simple (λ _ ↦ c)
+--   | omega : ∀ {α} [Ring α], Simple (λ n ↦ (↑n : α))
+--   | add : ∀ {α} [Ring α] (f g : F α), Simple f → Simple g → Simple (λ x ↦ f x + g x)
+--   | mul : ∀ {α} [Ring α] (f g : F α), Simple f → Simple g → Simple (λ x ↦ f x * g x)
+--   | neg : ∀ {α} [Ring α] (f : F α), Simple f → Simple (λ x ↦ - f x)
+--   | pow : ∀ {α} [Ring α] (f : F α) (n : ℕ), Simple f → Simple (λ x ↦ f x ^ n)
+
+-- def Star R [Ring R] := {f : F R // Simple f}
+
+-- notation:50 "★" R => Star R
+
+-- def nice [OrderedRing R] (f : ★ R) := ∀ r : R, □ ((r ≤ · ) <$> f.val) ∨ □ ((· ≤ r) <$> f.val)
+
+-- theorem simple_is_nice [LinearOrderedRing R] [Archimedean R] : ∀ (f : ★ R), nice f
+--   | ⟨_, Simple.const c⟩ => by
+--     intros x
+--     if h : x ≤ c
+--       then exact Or.inl ⟨0, λ _ _ => h⟩
+--       else 
+--         exact Or.inr ⟨0, λ _ _ => le_of_not_le h⟩
+--   | ⟨ _, Simple.omega ⟩ => by
+--     intros x
+--     have ⟨n, n_big⟩ := exists_nat_ge x
+--     apply Or.inl
+--     exists n
+--     intros m m_hyp
+--     simp_rw [Functor.map, F.map, id]
+--     apply le_trans (b := ↑n) n_big
+    
+--   | ⟨ _, Simple.pow _ _ _ ⟩ => _
+--   | ⟨ _, Simple.neg _ _ ⟩ => _
+--   | ⟨ _, Simple.mul _ _ _ _ ⟩ => _
+--   | ⟨ _, Simple.add _ _ _ _ ⟩ => _
 
 end Stream
