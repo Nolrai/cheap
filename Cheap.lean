@@ -123,38 +123,16 @@ theorem lift_forall (𝔽 : Prefilter α) : (∀ n, p n) → p ∈ 𝔽 := by
 structure Filter (α) extends Prefilter α where
   lift_and (p q : Set α) : big p → big q → big (p ⊓ q)
 
+instance : SetLike (Filter α) (Set α) where
+  coe := Prefilter.big ∘ Filter.toPrefilter
+  coe_injective'
+    | ⟨⟨_, _, _, _⟩, _⟩, ⟨⟨_, _, _, _⟩, _⟩, rfl => by simp
+
 open Filter
 open Prefilter
 
 structure Cofilter (α) extends Prefilter α where
   lower_or (p q : Set α) : big (p ⊔ q) → big p ∨ big q
-
-def toPrefilter (basis : Set (Set α)) (non_empty : basis.Nonempty)
-  : Prefilter α :=
-
-  let big' (x : Set α) := ∃ (l : List (Set α)) (y : Set α), (∀ a ∈ (y :: l), a ∈ basis) ∧ l.foldl (· ⊓ .) y ⊆ x
-
-  let pure_true' : big' Set.univ := ⟨ [], _, _⟩
-
-  { big := big'
-
-  , upwards_closed := by
-      intros p q p_le_q in_p
-      have ⟨l, y, l_sub_basis, l_prop⟩ := in_p
-      simp at *
-      use l; use y
-      apply And.intro
-      · exact l_sub_basis
-      · apply subset_trans l_prop p_le_q
-
-  , pure_false := by
-      intros hyp
-      have ⟨l, y, l_sub_basis, l_prop⟩ := hyp
-      simp [List.foldl] at l_prop
-      
-
-  , pure_true := pure_true'
-  }
 
 def cofinite_prefilter : Prefilter ℕ where
   big := eventually id
@@ -187,50 +165,11 @@ theorem Or.elim_inl : p ∨ q → ¬ p → q :=
 
 def infinite_cofilter : Cofilter ℕ where
   big x := ∀ n, ∃ m, n ≤ m ∧ m ∈ x
-  upwards_closed
+  upwards_closed := _
 
-instance : Cofilter (◇ (·)) where
-  upwards_closed (p q : F Prop) p_le_q :=
-    λ diw_p n ↦
-      have ⟨m, m_big, p_m⟩ := diw_p n
-      ⟨m, m_big, p_le_q _ p_m⟩
+class UltraFilter (α : Type) extends Filter α, Cofilter α where
 
-  pure_true := λ n => ⟨n, le_refl n, by simp [pure]⟩
-  pure_false := λ h =>
-    have ⟨_, _, h⟩ := h 0
-    h
-  lower_or (p q) 𝔽_p_or_q := by
-    classical!
-    by_cases h : □ (∼ p)
-    · have ⟨n₀, h⟩ := h
-      simp at *
-      right
-      intros n₁
-      have ⟨n₂, n₂_big, p_or_q⟩ := 𝔽_p_or_q (max n₀ n₁)
-      use n₂
-      constructor
-      · apply le_trans _ n₂_big
-        apply le_max_right
-      · simp
-        simp_rw [id, Sup.sup] at p_or_q
-        apply Or.elim_inl p_or_q
-        apply h
-        simp [] at n₂_big
-        exact n₂_big.1
-    · left
-      intros n
-      simp at *
-      apply markov
-      intros hyp
-      apply h
-      use n
-      simp
-      intros m m_big p_m
-      apply hyp m ⟨m_big, p_m⟩
-
-class UltraFilter (𝔽 : F Prop → Prop) extends Filter 𝔽, Cofilter 𝔽 : Prop
-
-theorem UltraFilter.ultra [UltraFilter (𝔽 : F Prop → Prop)] {p } : 𝔽 p ∨ 𝔽 (∼ p) := by
+theorem UltraFilter.ultra (𝕌 : UltraFilter α) {p} : 𝕌.big p ∨ 𝕌.big (∼ p) := by
   apply lower_or
   apply lift_forall
   intros n
@@ -239,14 +178,20 @@ theorem UltraFilter.ultra [UltraFilter (𝔽 : F Prop → Prop)] {p } : 𝔽 p �
   classical
   apply em
 
-def principlePrefilter
-  (s : Set ℕ) (x : F Prop) : Prop := s ⊆ x
+def principlFilter (s : Set α) (nonempty : s ≠ ∅) : Filter α where
+   big x := s ⊆ x
+   upwards_closed p q p_le_q p_big := subset_trans p_big p_le_q
+   pure_false hyp := nonempty ( Set.subset_empty_iff.mp hyp )
+   pure_true := Set.subset_univ _
+   lift_and p q p_big q_big := by
+    simp at *
+    exact ⟨p_big, q_big⟩
 
-def test (x y : Set (F Prop) ) := x ⊆ y
+def extend_filter :
 
 open Filter
 
-theorem cap_in_ge_filter {f₀ f₁} {p q} : Filter f₁ → f₀ ≤ f₁ → p ∈ f₀ → q ∈ f₁ → p ⊓ q ∈ f₁ := by
+theorem cap_in_ge_filter {f₀ f₁ : Filter α} {p q} : f₀ ⊆ f₁ → p ∈ f₀ → q ∈ f₁ → p ⊓ q ∈ f₁ := by
   intros g₁_filter f₀_le_f₁ p_in_f₀ q_in_f₁
   apply g₁_filter.lift_and p q _ q_in_f₁
   apply f₀_le_f₁
