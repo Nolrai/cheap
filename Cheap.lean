@@ -67,19 +67,17 @@ noncomputable
 def Star.join_spec {α : Type u} (ss : Star (Star α)) : Star α :=
   ss.lift_map_spec (λ x ↦ Star.mk $ (Function.join : (ℕ → ℕ → α) → ℕ → α) x)
 
-theorem helper {α : Type u} (x₁ x₂ : ℕ → ℕ → α)
-  : Star.mk_mk x₁ = Star.mk_mk x₂ → Star.mk (Function.join x₁) = Star.mk (Function.join x₂) := by
-  intros hyp
-  apply Quotient.sound
-  have hyp : ∀ᶠ  i in _, Star.mk (x₁ i) = Star.mk (x₂ i) := Quotient.exact hyp
-  have : ∀ i, Star.mk (x₁ i) = Star.mk (x₂ i) ↔ (x₁ i) ≈ (x₂ i) :=
-    λ i ↦ Iff.intro Quotient.exact' Quotient.sound'
-  simp_rw [this] at hyp
-  clear this
-  have := hyp.curry
+def Star.functor_map {α β : Type u} (f : α → β) : Star α → Star β := by
+  apply Star.map
+  case g => use (f ∘ ·)
+  case hyp =>
+    intros a b
+    filter_upwards
+    intros i a_eq_b
+    simp [a_eq_b]
 
-
-instance : Applicative (Star : Type u → Type u) where
-  map f := Star.map (f ∘ ·) _
+instance : Applicative Star where
+  map := Star.functor_map
   pure a := Star.mk (λ _ ↦ a)
   seq := Star.seq
+
