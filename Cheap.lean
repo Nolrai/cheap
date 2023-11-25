@@ -12,41 +12,23 @@ import Mathlib.Order.Filter.Basic
 import Mathlib.Order.Filter.Cofinite
 import Mathlib.Order.Filter.Ultrafilter
 
-def Filter.lift_setoid (F : Filter β) (S : Setoid α) : Setoid (β → α) where
-  r a b := ∀ᶠ i in F, S.r (a i) (b i)
-  iseqv := {
-    refl := λ x ↦ Filter.eventually_of_forall λ i => S.refl (x i)
-    symm := λ {_x _y} x_y ↦ Eventually.mp x_y $ Filter.eventually_of_forall (λ _ => S.symm)
-    trans := λ {_x _y _z} x_y y_z ↦ Eventually.mp y_z $ Eventually.mp x_y $ eventually_of_forall $
-      λ _i x_y' y_z' ↦ S.trans x_y' y_z'
-  }
+open Filter
 
-def Setoid.trivial α : Setoid α where
-  r a b := a = b
-  iseqv := ⟨by simp, by simp, by simp⟩
+instance Star.Setoid {α} : Setoid (ℕ → α) where
+  r a b := a =ᶠ[Filter.hyperfilter ℕ] b
+  iseqv := ⟨Filter.EventuallyEq.refl _, Filter.EventuallyEq.symm, Filter.EventuallyEq.trans⟩
 
-@[simp]
-theorem Setoid.trivial.def : (Setoid.trivial α).r = (· = ·) := rfl
+theorem Star.r_def (f₁ f₂ : ℕ → α) : (f₁ ≈ f₂) = (f₁ =ᶠ[Filter.hyperfilter ℕ] f₂) := rfl
 
-def Star.Setoid {α : Sort v} : Setoid (ℕ → α) :=
-  Filter.lift_setoid (Filter.hyperfilter ℕ).toFilter $ Setoid.trivial α
+def Star (α : Type u) := Quotient (Star.Setoid (α := α))
 
-infix:60 " ≋ " => λ a b ↦ Star.Setoid.r a b
-
-def Star (α : Sort v) := Quotient $ Star.Setoid (α := α)
-
-abbrev Star.mk : (ℕ → α) → Star α := Quotient.mk''
+abbrev Star.mk : (ℕ → α) → Star α := Quotient.mk (Star.Setoid (α := α))
 
 def Star.map
   (g : ((ℕ → α) → (ℕ → β)))
-  (hyp : ∀ a b, ∀ᶠ (x : ℕ) in ↑(Filter.hyperfilter ℕ), (a x) = (b x) → (g a x) = (g b x))
-  : Star α → Star β := Quotient.map' (s₁ := Star.Setoid) (s₂ := Star.Setoid) g $ by
-    intros x y
-    have : ∀ {α} (a b : ℕ → α), Star.Setoid.r a b = ∀ᶠ i in _, a i = b i := λ _ _ ↦ rfl
-    rw [this, this (α := β)]; clear this
-    intros h₁
-    apply Filter.Eventually.mp h₁
-    apply hyp
+  (hyp : ∀ a b, ∀ᶠ (i : ℕ) in ↑(Filter.hyperfilter ℕ), a i = b i → g a i = g b i)
+  : Star α → Star β
+  := Quotient.map g (λ a b a_eqv_b ↦ Eventually.mp a_eqv_b (hyp a b))
 
 def Star.lift
   {α β : Type u}
@@ -60,8 +42,6 @@ def Star.seq {α β : Type u} (mf : Star (α → β)) (mx : Unit → Star α) : 
   simp
   filter_upwards [mx_equiv, mf_equiv]
   intros i mx_eq mf_eq
-  have : ∀ (τ : Type u) x y, (Setoid.trivial τ).r x y = (x = y) := λ _ _ _ ↦ rfl
-  simp [this] at *
   clear * - mx_eq mf_eq
   rw [mx_eq, mf_eq]
 
@@ -69,7 +49,7 @@ def Star.mk_mk (f : ℕ → ℕ → α) : Star (Star α) := Star.mk (Star.mk ∘
 
 noncomputable
 def Star.out_out (s : Star (Star α)) : ℕ → ℕ → α :=
-  Quotient.out' ∘ s.out'
+  Quotient.out ∘ s.out
 
 theorem Star.mk_mk_out_out {α : Type u} (m : Star (Star α)) : Star.mk_mk m.out_out = m := by
   simp_rw [Star.out_out, Star.mk_mk, Function.comp, Star.mk]
@@ -77,10 +57,29 @@ theorem Star.mk_mk_out_out {α : Type u} (m : Star (Star α)) : Star.mk_mk m.out
   simp
 
 noncomputable
-def Star.lift_map_spec (f : (ℕ → ℕ → α) → β) : Star (Star α) → Star α
+def Star.lift_map_spec {α β : Type u} (f : (ℕ → ℕ → α) → β) ( ss : Star (Star α)) : β :=
+  f ss.out_out
 
-instance : Monad (Star : Type u → Type u) where
+def Function.join : (α → α → β) → α → β :=
+  λ f a ↦ f a a
+
+noncomputable
+def Star.join_spec {α : Type u} (ss : Star (Star α)) : Star α :=
+  ss.lift_map_spec (λ x ↦ Star.mk $ (Function.join : (ℕ → ℕ → α) → ℕ → α) x)
+
+theorem helper {α : Type u} (x₁ x₂ : ℕ → ℕ → α)
+  : Star.mk_mk x₁ = Star.mk_mk x₂ → Star.mk (Function.join x₁) = Star.mk (Function.join x₂) := by
+  intros hyp
+  apply Quotient.sound
+  have hyp : ∀ᶠ  i in _, Star.mk (x₁ i) = Star.mk (x₂ i) := Quotient.exact hyp
+  have : ∀ i, Star.mk (x₁ i) = Star.mk (x₂ i) ↔ (x₁ i) ≈ (x₂ i) :=
+    λ i ↦ Iff.intro Quotient.exact' Quotient.sound'
+  simp_rw [this] at hyp
+  clear this
+  have := hyp.curry
+
+
+instance : Applicative (Star : Type u → Type u) where
   map f := Star.map (f ∘ ·) _
   pure a := Star.mk (λ _ ↦ a)
   seq := Star.seq
-  bind := sorry
