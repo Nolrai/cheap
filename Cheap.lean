@@ -11,30 +11,35 @@ import Mathlib.Data.Set.Lattice
 import Mathlib.Order.Filter.Basic
 import Mathlib.Order.Filter.Cofinite
 import Mathlib.Order.Filter.Ultrafilter
+import Mathlib.Order.Filter.Germ
 
 open Filter
 
-instance Star.Setoid {α} : Setoid (ℕ → α) where
-  r a b := a =ᶠ[Filter.hyperfilter ℕ] b
-  iseqv := ⟨Filter.EventuallyEq.refl _, Filter.EventuallyEq.symm, Filter.EventuallyEq.trans⟩
+abbrev Star (α : Type u) := Germ ((hyperfilter ℕ) : Filter ℕ) α
 
-theorem Star.r_def (f₁ f₂ : ℕ → α) : (f₁ ≈ f₂) = (f₁ =ᶠ[Filter.hyperfilter ℕ] f₂) := rfl
+abbrev Star.limit : (ℕ → α) → Star α := Germ.ofFun
 
-def Star (α : Type u) := Quotient (Star.Setoid (α := α))
+open Star
 
-abbrev Star.mk : (ℕ → α) → Star α := Quotient.mk (Star.Setoid (α := α))
+theorem Star.ind {α : Type u}
+  {p : Star α → Prop} (h : ∀ f : ℕ → α, p (limit f)) (s : Star α)
+  : p s :=
+  by
+  induction s using Germ.inductionOn
+  case h f =>
+    apply h
 
-def Star.map
-  (g : ((ℕ → α) → (ℕ → β)))
-  (hyp : ∀ a b, ∀ᶠ (i : ℕ) in ↑(Filter.hyperfilter ℕ), a i = b i → g a i = g b i)
+def Star.map'
+  (f : ((ℕ → α) → (ℕ → β)))
+  (hyp : ∀ a b, ∀ᶠ (i : ℕ) in ↑(Filter.hyperfilter ℕ), a i = b i → f a i = f b i)
   : Star α → Star β
-  := Quotient.map g (λ a b a_eqv_b ↦ Eventually.mp a_eqv_b (hyp a b))
+  := Germ.map' f (λ a b a_eqv_b ↦ Eventually.mp a_eqv_b (hyp a b))
 
 def Star.lift
   {α β : Type u}
-  (g : ((ℕ → α) → β))
-  (hyp : ∀ a b : ℕ → α, (∀ᶠ (x : ℕ) in ↑(Filter.hyperfilter ℕ), (a x) = (b x)) → g a = g b)
-  : Star α → β := Quotient.lift (s := Star.Setoid) g hyp
+  (f : ((ℕ → α) → β))
+  (hyp : ∀ a b : ℕ → α, (∀ᶠ (x : ℕ) in ↑(Filter.hyperfilter ℕ), (a x) = (b x)) → f a = f b)
+  : Star α → β := Quotient.lift f hyp
 
 def Star.seq {α β : Type u} (mf : Star (α → β)) (mx : Unit → Star α) : Star β := by
   apply Quotient.map₂' (λ f a i ↦ f i (a i)) _ mf (mx () )
@@ -45,39 +50,81 @@ def Star.seq {α β : Type u} (mf : Star (α → β)) (mx : Unit → Star α) : 
   clear * - mx_eq mf_eq
   rw [mx_eq, mf_eq]
 
-def Star.mk_mk (f : ℕ → ℕ → α) : Star (Star α) := Star.mk (Star.mk ∘ f)
-
-noncomputable
-def Star.out_out (s : Star (Star α)) : ℕ → ℕ → α :=
-  Quotient.out ∘ s.out
-
-theorem Star.mk_mk_out_out {α : Type u} (m : Star (Star α)) : Star.mk_mk m.out_out = m := by
-  simp_rw [Star.out_out, Star.mk_mk, Function.comp, Star.mk]
-  rw [← Quotient.out_eq' m]
-  simp
-
-noncomputable
-def Star.lift_map_spec {α β : Type u} (f : (ℕ → ℕ → α) → β) ( ss : Star (Star α)) : β :=
-  f ss.out_out
-
-def Function.join : (α → α → β) → α → β :=
-  λ f a ↦ f a a
-
-noncomputable
-def Star.join_spec {α : Type u} (ss : Star (Star α)) : Star α :=
-  ss.lift_map_spec (λ x ↦ Star.mk $ (Function.join : (ℕ → ℕ → α) → ℕ → α) x)
-
-def Star.functor_map {α β : Type u} (f : α → β) : Star α → Star β := by
-  apply Star.map
-  case g => use (f ∘ ·)
-  case hyp =>
-    intros a b
-    filter_upwards
-    intros i a_eq_b
-    simp [a_eq_b]
+abbrev Star.map {α β : Type u} (F : α → β) : Star α → Star β := Germ.map F
 
 instance : Applicative Star where
-  map := Star.functor_map
-  pure a := Star.mk (λ _ ↦ a)
+  map := Star.map
+  pure a := Star.limit (λ _ ↦ a)
   seq := Star.seq
+  seqLeft x _ := x
+  seqRight _ y := y ()
+
+@[simp]
+theorem Star.segLeft_eq_left (x : Star α) (y : Star β) : x <* y = x := rfl
+
+@[simp]
+theorem Star.segRight_eq_right (x : Star α) (y : Star β) : x *> y = y:= rfl
+
+@[simp]
+theorem Star.seq_mk_mk (x : ℕ → α → β) (y : ℕ → α) : Star.limit x <*> Star.limit y = Star.limit (λ i ↦ x i (y i)) :=
+  rfl
+
+@[simp]
+theorem Star.map_mk {α β : Type u} (f : ℕ → α) (F : α → β) :
+  F <$> (Star.limit f) = Star.limit (F ∘ f) := rfl
+
+@[simp]
+theorem Star.pure_def {α : Type u} (x : α) : pure x = Star.limit (λ _ ↦ x) := rfl
+
+instance : LawfulApplicative Star where
+  map_const := rfl
+  id_map := λ x ↦ Germ.inductionOn x
+    (λ f ↦ by
+      rw [Star.map_mk]
+      simp
+    )
+  map_pure := λ f x ↦ by
+    rw [Star.pure_def, Star.pure_def, Star.map_mk]
+    simp [Function.comp]
+  seqLeft_eq := λ x y ↦ by
+    simp_rw [Star.segLeft_eq_left, Function.const]
+    induction x using Star.ind
+    case h f =>
+      rw [Star.map_mk]
+      induction y using Star.ind
+      case h g =>
+        rw [Star.seq_mk_mk]
+        simp
+
+  seqRight_eq := λ x y ↦ by
+    simp_rw [Star.segRight_eq_right, Function.const]
+    induction x using Star.ind
+    case h f =>
+      rw [Star.map_mk]
+      induction y using Star.ind
+      case h g =>
+        rw [Star.seq_mk_mk]
+        simp
+
+  pure_seq := λ g x ↦ by
+    rw [pure_def]
+    induction x using Star.ind
+    case h f =>
+      rw [seq_mk_mk, map_mk]
+      congr
+
+  seq_pure := λ g x ↦ by
+    induction g using Star.ind
+    case h f =>
+    rw [pure_def, seq_mk_mk, map_mk]
+    congr
+
+  seq_assoc := λ x g h ↦ by
+    induction g using Star.ind
+    case h g =>
+    induction h using Star.ind
+    case h h =>
+    induction x using Star.ind
+    case h x =>
+    simp_rw [map_mk, Function.comp, seq_mk_mk]
 
