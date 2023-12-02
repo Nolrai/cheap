@@ -12,6 +12,9 @@ import Mathlib.Order.Filter.Basic
 import Mathlib.Order.Filter.Cofinite
 import Mathlib.Order.Filter.Ultrafilter
 import Mathlib.Order.Filter.Germ
+import Mathlib.ModelTheory.Basic
+import Mathlib.ModelTheory.Syntax
+import Mathlib.Data.Fin.Basic
 
 open Filter
 
@@ -128,3 +131,37 @@ instance : LawfulApplicative Star where
     case h x =>
     simp_rw [map_mk, Function.comp, seq_mk_mk]
 
+inductive AddMul where
+  | Add
+  | Mul
+
+abbrev fromBool (b : Bool) : Type :=
+  if b then Unit else Empty
+
+open FirstOrder
+open Language
+
+def GroupLanguage : Language :=
+  Language.mk (fromBool ∘ (· < 3)) (λ _ ↦ Empty)
+
+def OrderLanguage : Language :=
+  Language.mk (λ _ ↦ Empty) (fromBool ∘ (· = 2))
+
+def OrderedFieldLanguage : Language :=
+  (GroupLanguage.sum GroupLanguage).sum OrderLanguage
+
+open Functions
+
+def assoc {L : Language} (f : L.Functions 2) : L.Sentence :=
+  ∀' ∀' ∀'((f.apply₂ (f.apply₂ &0 &1) &2 =' f.apply₂ &0 (f.apply₂ &1 &2)))
+
+def left_id {L : Language} (f : L.Functions 2) (e : L.Constants) : L.Sentence :=
+  ∀' (f.apply₂ e.term &0 =' &0)
+
+def right_id {L : Language} (f : L.Functions 2) (e : L.Constants) : L.Sentence :=
+  ∀' (f.apply₂ &0 e.term =' &0)
+
+def MonoidTheory {L : Language} (opp : L.Functions 2) (id : L.Constants) : L.Theory :=
+  {assoc opp, left_id opp id, right_id opp id}
+
+def
