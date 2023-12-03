@@ -14,6 +14,7 @@ import Mathlib.Order.Filter.Ultrafilter
 import Mathlib.Order.Filter.Germ
 import Mathlib.ModelTheory.Basic
 import Mathlib.ModelTheory.Syntax
+import Mathlib.ModelTheory.Ultraproducts
 import Mathlib.Data.Fin.Basic
 
 open Filter
@@ -141,6 +142,81 @@ abbrev fromBool (b : Bool) : Type :=
 open FirstOrder
 open Language
 
+instance {α : Type u} : EmptyCollection (Fin 0 → α) where
+  emptyCollection := Fin.elim0
+
+def Star.vector_seq : ∀ {n}, Vector (Star α) n → Star (Vector α n)
+  | 0, Vector.nil => pure Vector.nil
+  | _+1, v => Vector.cons <$> v.head <*> Star.vector_seq v.tail
+
+instance Star.lift_Structure [S : Structure L α] : Structure L (Star α) where
+  funMap name args := (S.funMap name ∘ Vector.get) <$> (Star.vector_seq (Vector.ofFn args))
+  RelMap name args := (S.RelMap name ∘ Vector.get) <$> (Star.vector_seq (Vector.ofFn args)) = pure True
+
+theorem Star.pure_vector_seq (g : (Fin n → α) → β) (x : Fin n → α) :
+  pure (g x) = (g ∘ Vector.get) <$> vector_seq (Vector.ofFn (pure ∘ x)) :=
+  by
+  induction n
+  case zero =>
+    have : Star.vector_seq (Vector.nil : Vector (Star α) 0) = pure Vector.nil := rfl
+    rw [Vector.ofFn, this, LawfulApplicative.map_pure, Function.comp]
+    congr
+    funext i
+    apply i.elim0
+  case succ n n_ih =>
+    
+
+instance Star.lift_term [S : Structure L α] (t : L.Term β) :
+  ∀ v, pure (t.realize (M := α) v) = t.realize (M := Star α) (pure ∘ v) := by
+    induction t
+    case var b =>
+      simp_rw [Term.realize]
+      simp
+    case func l f ts ts_ih =>
+      simp_rw [Term.realize]
+      simp_rw [Star.lift_Structure, ← ts_ih]
+      clear ts_ih
+      intros v
+      let g : (Fin l → α) → α := Structure.funMap f
+      have h₀ : g = Structure.funMap f := rfl
+      let ts₂ := λ i => Term.realize v (ts i)
+      have h₁ : ts₂ = λ i => Term.realize v (ts i) := rfl
+      have h₂ : (pure ∘ ts₂ : _ → Star α) = (λ i => pure (Term.realize v (ts i))) := rfl
+      simp_rw [← h₂, ← h₀]
+      rw [← h₁]
+      clear
+
+
+theorem Star.transfer_aux
+    (L : Language)
+    (α : Type*)
+    (β : Type*)
+    (n : ℕ)
+    [S : Structure L α]
+    (k m : ℕ)
+    (relName : Relations L m)
+    (args : Fin m → Term L (β ⊕ Fin k))
+    : (∀ (v₁ : β → α) (v₂ : Fin k → α), lift_Structure.RelMap relName fun i => Term.realize (Sum.elim v₁ v₂) (args i))
+    ↔ ∀ (v₁ : β → Star α) (v₂ : Fin k → Star α),
+      lift_Structure.RelMap relName fun i => Term.realize (M := Star α) (Sum.elim v₁ v₂) (args i) where
+    mpr := by
+      intros hyp v₁ v₂
+      have := hyp (pure ∘ v₁) (pure ∘ v₂)
+
+
+
+instance Star.transfer_forall : ∀ [S : Structure L α] (φ : L.BoundedFormula β n)
+  , (∀ (v₁ : _ → α) v₂, φ.Realize v₁ v₂) ↔ (∀ (v₁ : _ → Star α) v₂, φ.Realize v₁ v₂) := by
+  intros S φ
+  induction φ with
+  | falsum =>
+    simp_rw [BoundedFormula.Realize]
+  | rel relName args =>
+    simp_rw [BoundedFormula.Realize]
+
+
+
+
 def GroupLanguage : Language :=
   Language.mk (fromBool ∘ (· < 3)) (λ _ ↦ Empty)
 
@@ -163,5 +239,3 @@ def right_id {L : Language} (f : L.Functions 2) (e : L.Constants) : L.Sentence :
 
 def MonoidTheory {L : Language} (opp : L.Functions 2) (id : L.Constants) : L.Theory :=
   {assoc opp, left_id opp id, right_id opp id}
-
-def
