@@ -5,237 +5,119 @@ import Mathlib.Data.Nat.Cast.Basic
 import Mathlib.Data.List.Basic
 import Mathlib.Algebra.Order.Archimedean
 import Mathlib.Init.Set
-import Mathlib.Order.Zorn
-import std
-import Mathlib.Data.Set.Lattice
 import Mathlib.Order.Filter.Basic
 import Mathlib.Order.Filter.Cofinite
-import Mathlib.Order.Filter.Ultrafilter
-import Mathlib.Order.Filter.Germ
-import Mathlib.ModelTheory.Basic
-import Mathlib.ModelTheory.Syntax
-import Mathlib.ModelTheory.Ultraproducts
-import Mathlib.Data.Fin.Basic
+import Mathlib.Order.Monotone.Basic
+import std
+import Mathlib.Data.Polynomial.Basic
+import Mathlib.Data.Polynomial.Eval
+import Mathlib.Data.Polynomial.Degree.Definitions
 
 open Filter
 
-abbrev Star (α : Type u) := Germ ((hyperfilter ℕ) : Filter ℕ) α
+section
 
-abbrev Star.limit : (ℕ → α) → Star α := Germ.ofFun
+def simply_ordered
+  {α β : Type*} [LinearOrderedRing α] [LinearOrderedRing β]
+  (f : α → β) :
+  Prop := ∀ c, ¬ ((∃ᶠ n in atTop, f n > c) ∧ (∃ᶠ n in atTop, f n < c))
 
-open Star
+open Polynomial
 
-theorem Star.ind {α : Type u}
-  {p : Star α → Prop} (h : ∀ f : ℕ → α, p (limit f)) (s : Star α)
-  : p s :=
-  by
-  induction s using Germ.inductionOn
-  case h f =>
-    apply h
+theorem Polynomial.ind_aux
+  [Semiring R]
+  (p : R[X])
+  {n : ℕ}
+  : p.degree = ↑n →
+  ∃ p' c, p'.degree < p.degree ∧ p = C c + p' * X := sorry
 
-def Star.map'
-  (f : ((ℕ → α) → (ℕ → β)))
-  (hyp : ∀ a b, ∀ᶠ (i : ℕ) in ↑(Filter.hyperfilter ℕ), a i = b i → f a i = f b i)
-  : Star α → Star β
-  := Germ.map' f (λ a b a_eqv_b ↦ Eventually.mp a_eqv_b (hyp a b))
+def exists_equal : ∀ n : α, ∃ m, n = m := λ n => ⟨n, rfl⟩
 
-def Star.lift
-  {α β : Type u}
-  (f : ((ℕ → α) → β))
-  (hyp : ∀ a b : ℕ → α, (∀ᶠ (x : ℕ) in ↑(Filter.hyperfilter ℕ), (a x) = (b x)) → f a = f b)
-  : Star α → β := Quotient.lift f hyp
+def With_bot.strong_induction [Preorder α] (motive : WithBot ℕ → Prop)
+  (hyp : ∀ n, (∀ m, m < n → motive m) → motive n )
+  : ∀ n, motive n := by
+  have motive_bot : motive ⊥ := by
+    apply hyp
+    intros m m_lt
+    exfalso
+    apply not_lt_bot m_lt
+  intros n
+  cases n using WithBot.recBotCoe with
+  | bot => exact motive_bot
+  | coe n =>
+    induction n using Nat.strong_induction_on with
+    | h n ih =>
+    apply hyp n
+    intros m m_lt
+    cases m using WithBot.recBotCoe with
+    | bot => exact motive_bot
+    | coe m =>
+      apply ih
+      rw [← WithBot.coe_lt_coe]
+      exact m_lt
 
-def Star.seq {α β : Type u} (mf : Star (α → β)) (mx : Unit → Star α) : Star β := by
-  apply Quotient.map₂' (λ f a i ↦ f i (a i)) _ mf (mx () )
-  intros mf₁ mf₂ mf_equiv mx₁ mx₂ mx_equiv
-  simp
-  filter_upwards [mx_equiv, mf_equiv]
-  intros i mx_eq mf_eq
-  clear * - mx_eq mf_eq
-  rw [mx_eq, mf_eq]
+theorem Polynomial.ind
+  [inst : OrderedSemiring R]
+  (motive : R[X] → Prop)
+  (zero_case : motive 0)
+  (add_const : ∀ a p, motive p → motive (p + C a))
+  (mul_X : ∀ p, motive p → motive (p * X))
+  : ∀ (p : R[X]), motive p := by
+    intro p
+    have ⟨n, is_degree⟩ : ∃ n, p.degree = n := exists_equal p.degree
+    revert p
+    induction n using With_bot.strong_induction with
+    | hyp n hyp =>
+      intros p degree_p_eq
+      cases n using WithBot.recBotCoe with
+      | bot =>
+        rw [degree_eq_bot, degree_p_eq] at *
+        apply zero_case
+      | coe n =>
+        have ⟨p', c, lower_degree, eq_p⟩  := p.ind_aux degree_p_eq
+        rw [add_comm] at eq_p
+        rw [eq_p]
+        rw [degree_p_eq] at *; clear degree_p_eq
+        apply add_const
+        apply mul_X
+        apply hyp (degree p') lower_degree
+        rfl
+    apply inst.toPreorder
 
-abbrev Star.map {α β : Type u} (F : α → β) : Star α → Star β := Germ.map F
+theorem Polynomial.eventually_ordered_zero
+  [inst : LinearOrderedRing R]
+  (p : R[X])
+  : simply_ordered p.eval := by
+  induction p using Polynomial.ind
+  case zero_case =>
+    intros reference hyp
+    have ⟨pos, neg⟩ := hyp; clear hyp
+    simp at *
+    apply lt_irrefl (0 : R)
+    apply lt_trans neg pos
 
-instance : Applicative Star where
-  map := Star.map
-  pure a := Star.limit (λ _ ↦ a)
-  seq := Star.seq
-  seqLeft x _ := x
-  seqRight _ y := y ()
+  case add_const c p ih =>
+    intros reference
+    intros h
+    have ⟨pos, neg⟩ := h; clear h
+    apply ih (reference - c)
+    simp at *
+    constructor
+    case left =>
+      apply Frequently.mono pos
+      intros x reference_lt_eval_p_plus_c
+      rw [← add_zero (eval x p), ← add_left_neg (-c), sub_eq_add_neg, neg_neg, ← add_assoc]
+      apply add_lt_add_right
+      assumption
+    case right =>
+      apply Frequently.mono neg
+      intros x reference_lt_eval_p_plus_c
+      rw [← add_zero (eval x p), ← add_left_neg (-c), sub_eq_add_neg, neg_neg, ← add_assoc]
+      apply add_lt_add_right
+      assumption
 
-@[simp]
-theorem Star.segLeft_eq_left (x : Star α) (y : Star β) : x <* y = x := rfl
-
-@[simp]
-theorem Star.segRight_eq_right (x : Star α) (y : Star β) : x *> y = y:= rfl
-
-@[simp]
-theorem Star.seq_mk_mk (x : ℕ → α → β) (y : ℕ → α) : Star.limit x <*> Star.limit y = Star.limit (λ i ↦ x i (y i)) :=
-  rfl
-
-@[simp]
-theorem Star.map_mk {α β : Type u} (f : ℕ → α) (F : α → β) :
-  F <$> (Star.limit f) = Star.limit (F ∘ f) := rfl
-
-@[simp]
-theorem Star.pure_def {α : Type u} (x : α) : pure x = Star.limit (λ _ ↦ x) := rfl
-
-instance : LawfulApplicative Star where
-  map_const := rfl
-  id_map := λ x ↦ Germ.inductionOn x
-    (λ f ↦ by
-      rw [Star.map_mk]
-      simp
-    )
-  map_pure := λ f x ↦ by
-    rw [Star.pure_def, Star.pure_def, Star.map_mk]
-    simp [Function.comp]
-  seqLeft_eq := λ x y ↦ by
-    simp_rw [Star.segLeft_eq_left, Function.const]
-    induction x using Star.ind
-    case h f =>
-      rw [Star.map_mk]
-      induction y using Star.ind
-      case h g =>
-        rw [Star.seq_mk_mk]
-        simp
-
-  seqRight_eq := λ x y ↦ by
-    simp_rw [Star.segRight_eq_right, Function.const]
-    induction x using Star.ind
-    case h f =>
-      rw [Star.map_mk]
-      induction y using Star.ind
-      case h g =>
-        rw [Star.seq_mk_mk]
-        simp
-
-  pure_seq := λ g x ↦ by
-    rw [pure_def]
-    induction x using Star.ind
-    case h f =>
-      rw [seq_mk_mk, map_mk]
-      congr
-
-  seq_pure := λ g x ↦ by
-    induction g using Star.ind
-    case h f =>
-    rw [pure_def, seq_mk_mk, map_mk]
-    congr
-
-  seq_assoc := λ x g h ↦ by
-    induction g using Star.ind
-    case h g =>
-    induction h using Star.ind
-    case h h =>
-    induction x using Star.ind
-    case h x =>
-    simp_rw [map_mk, Function.comp, seq_mk_mk]
-
-inductive AddMul where
-  | Add
-  | Mul
-
-abbrev fromBool (b : Bool) : Type :=
-  if b then Unit else Empty
-
-open FirstOrder
-open Language
-
-instance {α : Type u} : EmptyCollection (Fin 0 → α) where
-  emptyCollection := Fin.elim0
-
-def Star.vector_seq : ∀ {n}, Vector (Star α) n → Star (Vector α n)
-  | 0, Vector.nil => pure Vector.nil
-  | _+1, v => Vector.cons <$> v.head <*> Star.vector_seq v.tail
-
-instance Star.lift_Structure [S : Structure L α] : Structure L (Star α) where
-  funMap name args := (S.funMap name ∘ Vector.get) <$> (Star.vector_seq (Vector.ofFn args))
-  RelMap name args := (S.RelMap name ∘ Vector.get) <$> (Star.vector_seq (Vector.ofFn args)) = pure True
-
-theorem Star.pure_vector_seq (g : (Fin n → α) → β) (x : Fin n → α) :
-  pure (g x) = (g ∘ Vector.get) <$> vector_seq (Vector.ofFn (pure ∘ x)) :=
-  by
-  induction n
-  case zero =>
-    have : Star.vector_seq (Vector.nil : Vector (Star α) 0) = pure Vector.nil := rfl
-    rw [Vector.ofFn, this, LawfulApplicative.map_pure, Function.comp]
-    congr
-    funext i
-    apply i.elim0
-  case succ n n_ih =>
+  case mul_X p ih =>
+    intros reference h
+    have ⟨pos, neg⟩ := h; clear h
+    simp at *
     
-
-instance Star.lift_term [S : Structure L α] (t : L.Term β) :
-  ∀ v, pure (t.realize (M := α) v) = t.realize (M := Star α) (pure ∘ v) := by
-    induction t
-    case var b =>
-      simp_rw [Term.realize]
-      simp
-    case func l f ts ts_ih =>
-      simp_rw [Term.realize]
-      simp_rw [Star.lift_Structure, ← ts_ih]
-      clear ts_ih
-      intros v
-      let g : (Fin l → α) → α := Structure.funMap f
-      have h₀ : g = Structure.funMap f := rfl
-      let ts₂ := λ i => Term.realize v (ts i)
-      have h₁ : ts₂ = λ i => Term.realize v (ts i) := rfl
-      have h₂ : (pure ∘ ts₂ : _ → Star α) = (λ i => pure (Term.realize v (ts i))) := rfl
-      simp_rw [← h₂, ← h₀]
-      rw [← h₁]
-      clear
-
-
-theorem Star.transfer_aux
-    (L : Language)
-    (α : Type*)
-    (β : Type*)
-    (n : ℕ)
-    [S : Structure L α]
-    (k m : ℕ)
-    (relName : Relations L m)
-    (args : Fin m → Term L (β ⊕ Fin k))
-    : (∀ (v₁ : β → α) (v₂ : Fin k → α), lift_Structure.RelMap relName fun i => Term.realize (Sum.elim v₁ v₂) (args i))
-    ↔ ∀ (v₁ : β → Star α) (v₂ : Fin k → Star α),
-      lift_Structure.RelMap relName fun i => Term.realize (M := Star α) (Sum.elim v₁ v₂) (args i) where
-    mpr := by
-      intros hyp v₁ v₂
-      have := hyp (pure ∘ v₁) (pure ∘ v₂)
-
-
-
-instance Star.transfer_forall : ∀ [S : Structure L α] (φ : L.BoundedFormula β n)
-  , (∀ (v₁ : _ → α) v₂, φ.Realize v₁ v₂) ↔ (∀ (v₁ : _ → Star α) v₂, φ.Realize v₁ v₂) := by
-  intros S φ
-  induction φ with
-  | falsum =>
-    simp_rw [BoundedFormula.Realize]
-  | rel relName args =>
-    simp_rw [BoundedFormula.Realize]
-
-
-
-
-def GroupLanguage : Language :=
-  Language.mk (fromBool ∘ (· < 3)) (λ _ ↦ Empty)
-
-def OrderLanguage : Language :=
-  Language.mk (λ _ ↦ Empty) (fromBool ∘ (· = 2))
-
-def OrderedFieldLanguage : Language :=
-  (GroupLanguage.sum GroupLanguage).sum OrderLanguage
-
-open Functions
-
-def assoc {L : Language} (f : L.Functions 2) : L.Sentence :=
-  ∀' ∀' ∀'((f.apply₂ (f.apply₂ &0 &1) &2 =' f.apply₂ &0 (f.apply₂ &1 &2)))
-
-def left_id {L : Language} (f : L.Functions 2) (e : L.Constants) : L.Sentence :=
-  ∀' (f.apply₂ e.term &0 =' &0)
-
-def right_id {L : Language} (f : L.Functions 2) (e : L.Constants) : L.Sentence :=
-  ∀' (f.apply₂ &0 e.term =' &0)
-
-def MonoidTheory {L : Language} (opp : L.Functions 2) (id : L.Constants) : L.Theory :=
-  {assoc opp, left_id opp id, right_id opp id}
