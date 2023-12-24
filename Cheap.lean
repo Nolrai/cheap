@@ -33,21 +33,17 @@ theorem Polynomial.ind_aux
 
 def exists_equal : ∀ n : α, ∃ m, n = m := λ n => ⟨n, rfl⟩
 
-def With_bot.strong_induction [Preorder α] (motive : WithBot ℕ → Prop)
-  (hyp : ∀ n, (∀ m, m < n → motive m) → motive n )
+def With_bot.strong_induction' (motive : WithBot ℕ → Prop)
+  (motive_bot : motive ⊥)
+  (motive_coe : ∀ n : ℕ, (∀ m, m < ↑n → motive m) → motive ↑n )
   : ∀ n, motive n := by
-  have motive_bot : motive ⊥ := by
-    apply hyp
-    intros m m_lt
-    exfalso
-    apply not_lt_bot m_lt
   intros n
   cases n using WithBot.recBotCoe with
   | bot => exact motive_bot
   | coe n =>
     induction n using Nat.strong_induction_on with
     | h n ih =>
-    apply hyp n
+    apply motive_coe n
     intros m m_lt
     cases m using WithBot.recBotCoe with
     | bot => exact motive_bot
@@ -55,6 +51,16 @@ def With_bot.strong_induction [Preorder α] (motive : WithBot ℕ → Prop)
       apply ih
       rw [← WithBot.coe_lt_coe]
       exact m_lt
+
+def With_bot.strong_induction (motive : WithBot ℕ → Prop)
+  (hyp : ∀ n, (∀ m, m < n → motive m) → motive n )
+  : ∀ n, motive n := by
+    have motive_bot : motive ⊥ := by
+      apply hyp
+      intros m m_lt
+      exfalso
+      apply not_lt_bot m_lt
+    apply With_bot.strong_induction' motive motive_bot (λ n hyp₂ ↦ hyp n hyp₂)
 
 theorem Polynomial.ind
   [inst : OrderedSemiring R]
@@ -82,42 +88,11 @@ theorem Polynomial.ind
         apply mul_X
         apply hyp (degree p') lower_degree
         rfl
-    apply inst.toPreorder
 
-theorem Polynomial.eventually_ordered_zero
-  [inst : LinearOrderedRing R]
-  (p : R[X])
-  : simply_ordered p.eval := by
-  induction p using Polynomial.ind
-  case zero_case =>
-    intros reference hyp
-    have ⟨pos, neg⟩ := hyp; clear hyp
-    simp at *
-    apply lt_irrefl (0 : R)
-    apply lt_trans neg pos
+#print Polynomial.X
 
-  case add_const c p ih =>
-    intros reference
-    intros h
-    have ⟨pos, neg⟩ := h; clear h
-    apply ih (reference - c)
-    simp at *
-    constructor
-    case left =>
-      apply Frequently.mono pos
-      intros x reference_lt_eval_p_plus_c
-      rw [← add_zero (eval x p), ← add_left_neg (-c), sub_eq_add_neg, neg_neg, ← add_assoc]
-      apply add_lt_add_right
-      assumption
-    case right =>
-      apply Frequently.mono neg
-      intros x reference_lt_eval_p_plus_c
-      rw [← add_zero (eval x p), ← add_left_neg (-c), sub_eq_add_neg, neg_neg, ← add_assoc]
-      apply add_lt_add_right
-      assumption
+def productOfLinear [Semiring R] (m : Multiset R) := Finsupp.single (1 : R) (0 : R)
 
-  case mul_X p ih =>
-    intros reference h
-    have ⟨pos, neg⟩ := h; clear h
-    simp at *
-    
+
+
+theorem Polynomial.StrongFundamentalTheoremOfAlgebra
