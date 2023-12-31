@@ -1,6 +1,8 @@
 import Mathlib.Data.Nat.Basic
 import Mathlib.Data.Rat.Basic
 import Mathlib.Data.Rat.Order
+import Mathlib.Data.Fin.Basic
+import Mathlib.Data.Fin.Interval
 import Mathlib.Data.Complex.Basic
 import Mathlib.Data.Nat.Cast.Basic
 import Mathlib.Data.List.Basic
@@ -10,12 +12,9 @@ import Mathlib.Order.Filter.Basic
 import Mathlib.Order.Filter.Cofinite
 import Mathlib.Order.Monotone.Basic
 import std
-import Mathlib.Data.Polynomial.Basic
-import Mathlib.Data.Polynomial.Eval
-import Mathlib.Data.Polynomial.Degree.Definitions
-import Mathlib.Data.Finmap
 import Mathlib.Algebra.BigOperators.Basic
 import Mathlib.Algebra.BigOperators.Fin
+import Mathlib.Data.Fintype.Basic
 
 open Filter
 open Frequently
@@ -98,146 +97,62 @@ theorem oscillating_have_arbitrary_zig_zags
 
 end
 
-section
+section untrim
 
-prefix:100 " &" => (Σ _, ·)
+variable {R : Type u} [Zero R]
 
-def WithBot.succ (n : WithBot ℕ) : ℕ := n.recBotCoe (C := λ _ ↦ ℕ) 0 Nat.succ
-
-def lastIs (p : α → Prop) : ∀ {n}, (Fin n → α) → Prop
-  | 0, _ => True
-  | n+1, f => p (f n)
-
-section
-
-variable {f : Fin 0 → α}
+def untrim {R : Type u} [Zero R] (f : Fin n → R) : ℕ → R :=
+  λ i => if h : i < n then f ⟨i, h⟩ else 0
 
 @[simp]
-theorem lastIs.zero : lastIs p f := True.intro
+theorem untrim_zero {i : ℕ} (h : ¬ i < n) (f : Fin n → R) : untrim f i = 0 := by
+  rw [untrim, dif_neg h]
 
 @[simp]
-theorem lastIs.zero_iff : lastIs p f ↔ True := refl _
-
-end
-
-section
-
-variable {n} {f : Fin (n + 1) → α}
+theorem untrim_id {i : ℕ} (h : i < n) {f : Fin n → R} : untrim f i = f ⟨i, h⟩ := by
+  simp [untrim, dif_pos h]
 
 @[simp]
-theorem lastIs.succ (h : p (f n)) : lastIs p f := h
-
-@[simp]
-theorem lastIs.from_succ (h : lastIs p f) : p (f n) := h
-
-@[simp]
-theorem lastIs.succ_iff : lastIs p f ↔ p (f n) := refl _
-
-end
-
-instance [DecidablePred p] : ∀ {n}, DecidablePred (lastIs p (n := n))
-  | 0, _ => isTrue lastIs.zero
-  | (n+1), f =>
-    if h : p (f n)
-    then isTrue (lastIs.succ h)
-    else isFalse λ hyp ↦ h hyp
-
-structure Polynomial' (R : Type*) [AddMonoid R] where
-  degree' : ℕ
-  coeff' : Fin degree' → R
-  ofDegree : lastIs (· ≠ 0 : R → Prop) toCoef
-
-scoped[Polynomial'] notation:9000 R "[Z]" => Polynomial' R
-
-open Polynomial'
-
-def Polynomial'.degree [AddMonoid R] (p : R[Z]) : WithBot ℕ :=
-  match p.degree' with
-  | 0 => ⊥
-  | (n+1) => ↑n
-
-section trim_and_untrim
-
-variable [Zero R] [DecidablePred (· ≠ (0 : R))]
-
--- remove trailing zeros
-def trim :
-  ∀ {n}, (Fin n → R) → Σ m, Fin m → R
-  | 0, f => ⟨0, f⟩
-  | (n+1), f =>
-    if lastIs (· ≠ 0) f
-    then ⟨n+1, f⟩
-    else trim (n := n) (λ i ↦ f ↑i)
-
-@[simp]
-theorem trim.zero (f : Fin 0 → R) : trim f = ⟨0, f⟩ := rfl
-
-@[simp]
-theorem trim.succ_case_nonzero (f : Fin (n+1) → R) : f n ≠ 0 → trim f = ⟨n+1, f⟩ := by
-  intros h
-  rw [trim]
-  split
-  · rfl
-  case inr h' =>
-    exfalso
-    apply h
-
-@[simp]
-theorem trim.succ_case_zero (f : Fin (n+1) → R) : f n = 0 → trim f = trim (n := n) (λ i ↦ f ↑i)
-
-variable {n} (f : Fin n → R)
-
-def trim.size_le [DecidablePred (· ≠ (0 : R))] : (trim f).1 ≤ n := by
-  induction n
-  case zero => simp_rw [trim]
-  case succ n n_ih =>
-    rw [trim]
-    by_cases lastIs (· ≠ 0) f
-    · simp_rw [if_pos h]; rfl
-    · simp_rw [if_neg h]
-      apply le_trans (n_ih _) (Nat.le_succ n)
-
-def trim.isTopNonzero [DecidablePred (· ≠ (0 : R))] : lastIs (· ≠ 0) (trim f).2 := by
-  induction n
-  case zero => simp [trim, lastIs]
-
--- if its past the end just return zero
-def untrim (i : ℕ) : R :=
-  if h : i < n
-  then f ⟨i, h⟩
-  else 0
-
-def untrim' (k : ℕ) : Fin k → R :=
-  λ ⟨i, _⟩ => untrim f i
-
-abbrev under_untrim (a : Fin n → R) (b : Fin m → R) := untrim a = untrim b
+theorem untrim_comp (f : Fin n → R) (g : R → R') [Zero R'] (g_zero: g 0 = 0) : untrim (g ∘ f) = g ∘ untrim f := by
+  funext i
+  by_cases i < n
+  · simp [untrim_id h]
+  · simp [untrim_zero h, g_zero]
 
 def untrim_setoid : Setoid (Σ n, Fin n → R) where
-  r a b := under_untrim a.2 b.2
-  iseqv :=
-    { refl := λ x ↦ rfl
-    , symm := λ xy => xy.symm
-    , trans := λ xy yz => by rw [under_untrim, xy, yz]
-    }
+  r a b := untrim a.2 = untrim b.2
+  iseqv := {
+    refl := λ a ↦ rfl
+    symm := λ ab ↦ ab.symm
+    trans := λ ab bc ↦ by rw [ab, bc]
+  }
 
-def Finsup' := Quotient (untrim_setoid (R := R))
+end untrim
 
-def Markovs : Prop := ∀ (f : ℕ → Bool), ∃ i, f i = false ∨ ∀ i, f i = true
+def Finsuppℕ (R : Type u) [Zero R] : Type u := Quotient (untrim_setoid (R := R))
 
-theorem Polynomial'_equiv_untrim_quotient (m : Markovs) [AddMonoid R] : R[Z] ≃ Finsup' (R := R) where
+def Segment.map {α β : Type u} (f : α → β ) : (Σ n, Fin n → α) → Σ n, Fin n → β
+  | ⟨n, v⟩ => ⟨n, f ∘ v⟩
 
+variable (R) [Zero R]
 
-end trim_and_untrim
+def Finsuppℕ.map {R R'} [Zero R] [Zero R'] (f : R → R') (s : Finsuppℕ R) (f_zero : f 0 = 0) : Finsuppℕ R' := by
+  apply Quotient.map'
+    (s₁ := untrim_setoid (R := R))
+    (s₂ := untrim_setoid (R := R'))
+    (f := Segment.map f)
+  case a => exact s
+  case h =>
+    intros x₁ x₂
+    have ⟨n₁, v₁⟩ := x₁; clear x₁
+    have ⟨n₂, v₂⟩ := x₂; clear x₂
+    simp [untrim_setoid, Segment.map]
+    intros input_equal
+    rw [untrim_comp (g := f) (f := v₁) f_zero, untrim_comp (g := f) (f := v₂) f_zero, input_equal]
 
-def Polynomial'.coeff [AddMonoid R] (p : R[Z]) : ℕ → R :=
-  untrim p.coeff'
+def Fin.fold (f : R → α → α) (z : α) (x : Fin n → R) : α := Id.run <| do
+  let mut acc : α := z
+  for i in (id : Fin n → Fin n) do
+    acc := f (x i) acc
+  return acc
 
-open BigOperators
-
-def Polynomial'.sumF [AddMonoid R] [AddCommMonoid R'] (f : R → ℕ → R') (p : R[Z]) : R' :=
-  ∑ i, f (p.coeff' i) ↑i
-
-def Polynomial'.eval [Semiring R] (p : R[Z]) (x : R) : R := p.sumF (λ c power ↦ c * x ^ power)
-
-def Polynomial'.add [AddMonoid R] (a b : R[Z]) : R[Z] :=
-  let c' : Fin (max a.degree' b.degree') → R := λ i ↦ a.coeff i + b.coeff i
